@@ -61,4 +61,4 @@ assets/dist/
 *.pid
 *.seed
 
-venv/
+data/
