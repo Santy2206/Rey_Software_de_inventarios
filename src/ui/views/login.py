@@ -27,7 +27,7 @@ def LoginView(on_login_click):
 
     return ft.Container(
         width=350,
-        height=450,  # Lo dejé en 450 para que los elementos respiren bien
+        height=450,
         bgcolor="#c1273d",
         border_radius=20,
         padding=30,
@@ -48,7 +48,6 @@ def LoginView(on_login_click):
                 usuario_input,
                 password_input,
                 ft.Container(height=10),
-                # Tu botón original, pero conectado a la función on_login_click
                 ft.ElevatedButton(
                     "INGRESAR",
                     width=250,

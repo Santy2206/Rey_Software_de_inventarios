@@ -8,7 +8,6 @@ def main(page: ft.Page):
     page.bgcolor = "#b3001b"
     page.vertical_alignment = "center"
 
-    # Esta función une el Servicio con la Vista
     def manejar_login(user, pwd):
         resultado = AuthService.login(user, pwd)
 
@@ -21,7 +20,6 @@ def main(page: ft.Page):
         page.snack_bar.open = True
         page.update()
 
-    # Cargamos la vista pasándole el manejador
     page.add(
         ft.Row(alignment="center", controls=[LoginView(on_login_click=manejar_login)])
     )
