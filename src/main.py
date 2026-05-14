@@ -1,5 +1,16 @@
 import flet as ft
 import psycopg2
+from views.dashboard import dashboard_card
+
+#conexion = psycopg2.connect(
+    #host="localhost",
+    #database="Rey_Inventarios",
+    #user="postgres",
+    #password="Admin123"
+
+#)
+
+#cursor = conexion.cursor()
 
 
 def main(page: ft.Page):
@@ -14,6 +25,63 @@ def main(page: ft.Page):
     page.bgcolor = "#b3001b"
 
     page.vertical_alignment = ft.MainAxisAlignment.CENTER
+    
+    #----------------------Text Fields----------------------
+    
+    
+    
+    usuario_input = ft.TextField(
+        hint_text="Usuario",
+        border_radius=30,
+        filled=True,
+        bgcolor="#f5e6d3",
+        border_color="transparent",
+        cursor_color="black",
+        color="black"
+        
+    )
+
+    password_input = ft.TextField(
+        hint_text="Contraseña",
+        password=True,
+        can_reveal_password=True,
+        border_radius=30,
+        filled=True,
+        bgcolor="#f5e6d3",
+        border_color="transparent",
+        cursor_color="black",
+        color="black"
+    )
+    
+    #------------------Validar Login----------------------------
+    
+   # def validar_login(e):
+        
+       # usuario = usuario_input.value
+        #contraeña = password_input.value
+        
+        #cursor.execute(
+            #"SELECT * FROM usuarios WHERE usuario=%s AND contraseña=%s",
+            #(usuario, contraseña)
+        #)
+
+        #resultado = cursor.fetchone()
+
+        #if resultado:
+
+            #page.snack_bar = ft.SnackBar(
+                #ft.Text("Bienvenido al sistema")
+            #)
+
+        #else:
+
+            #page.snack_bar = ft.SnackBar(
+            #    ft.Text("Usuario o contraseña incorrectos")
+            #)
+
+        #page.snack_bar.open = True
+        #page.update()
+   
 
     #-------------------Login Usuario--------------------------------
 
@@ -42,24 +110,9 @@ def main(page: ft.Page):
                     weight="bold",
                     color="white"
                 ),
+                usuario_input,
 
-                ft.TextField(
-                    hint_text="Usuario",
-                    border_radius=30,
-                    filled=True,
-                    bgcolor="#f5e6d3",
-                    border_color="transparent"
-                ),
-
-                ft.TextField(
-                    hint_text="Contraseña",
-                    password=True,
-                    can_reveal_password=True,
-                    border_radius=30,
-                    filled=True,
-                    bgcolor="#f5e6d3",
-                    border_color="transparent"
-                ),
+                password_input,
 
                 ft.Container(height=10),
 
@@ -84,6 +137,7 @@ def main(page: ft.Page):
             ]
         )
     )
+    
 
     page.add(
         ft.Row(
@@ -93,6 +147,7 @@ def main(page: ft.Page):
             ]
         )
     )
+    
 
 
 ft.app(target=main, view=ft.AppView.WEB_BROWSER)
