@@ -1,4 +1,16 @@
 import flet as ft
+import psycopg2
+from views.dashboard import dashboard_card
+
+# conexion = psycopg2.connect(
+# host="localhost",
+# database="Rey_Inventarios",
+# user="postgres",
+# password="Admin123"
+
+# )
+
+# cursor = conexion.cursor()
 
 
 def main(page: ft.Page):
@@ -14,6 +26,59 @@ def main(page: ft.Page):
 
     page.vertical_alignment = ft.MainAxisAlignment.CENTER
 
+    # ----------------------Text Fields----------------------
+
+    usuario_input = ft.TextField(
+        hint_text="Usuario",
+        border_radius=30,
+        filled=True,
+        bgcolor="#f5e6d3",
+        border_color="transparent",
+        cursor_color="black",
+        color="black",
+    )
+
+    password_input = ft.TextField(
+        hint_text="Contraseña",
+        password=True,
+        can_reveal_password=True,
+        border_radius=30,
+        filled=True,
+        bgcolor="#f5e6d3",
+        border_color="transparent",
+        cursor_color="black",
+        color="black",
+    )
+
+    # ------------------Validar Login----------------------------
+
+    # def validar_login(e):
+
+    # usuario = usuario_input.value
+    # contraeña = password_input.value
+
+    # cursor.execute(
+    # "SELECT * FROM usuarios WHERE usuario=%s AND contraseña=%s",
+    # (usuario, contraseña)
+    # )
+
+    # resultado = cursor.fetchone()
+
+    # if resultado:
+
+    # page.snack_bar = ft.SnackBar(
+    # ft.Text("Bienvenido al sistema")
+    # )
+
+    # else:
+
+    # page.snack_bar = ft.SnackBar(
+    #    ft.Text("Usuario o contraseña incorrectos")
+    # )
+
+    # page.snack_bar.open = True
+    # page.update()
+
     # -------------------Login Usuario--------------------------------
 
     login_card = ft.Container(
@@ -25,40 +90,19 @@ def main(page: ft.Page):
         content=ft.Column(
             horizontal_alignment=ft.CrossAxisAlignment.CENTER,
             controls=[
-                # ------Corona--------------------
                 ft.Text("👑", size=40),
-                # ---------------Titulo--------------------
                 ft.Text(
                     "REY",
                     size=40,
                     weight="bold",
                     color="white",
-                    # ----------------Subtitulo-----------------
                 ),
                 ft.Text(
                     "SOFTWARE DE INVENTARIOS", size=12, weight="bold", color="white"
                 ),
-                # ----------------Usuario--------------------
-                ft.TextField(
-                    hint_text="Usuario",
-                    border_radius=30,
-                    filled=True,
-                    bgcolor="#f5e6d3",
-                    border_color="transparent",
-                ),
-                # --------------Contraseña--------------------
-                ft.TextField(
-                    hint_text="Contraseña",
-                    password=True,
-                    can_reveal_password=True,
-                    border_radius=30,
-                    filled=True,
-                    bgcolor="#f5e6d3",
-                    border_color="transparent",
-                ),
-                # ----------Espacio------------------
+                usuario_input,
+                password_input,
                 ft.Container(height=10),
-                # ------Boton--------
                 ft.ElevatedButton(
                     "INGRESAR",
                     width=250,
@@ -67,18 +111,13 @@ def main(page: ft.Page):
                     color="black",
                     style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=30)),
                 ),
-                # ----------------Espacio--------------------
                 ft.Container(height=5),
-                # -----------------Footer------------
-                ft.Text(
-                    "v2.0 © 2026 REY Inventarios", size=10, height=520, color="#ffb3b3"
-                ),
+                ft.Text("v2.0 © 2026 REY Inventarios", size=10, color="#ffb3b3"),
             ],
         ),
     )
 
     page.add(ft.Row(alignment=ft.MainAxisAlignment.CENTER, controls=[login_card]))
-    page.vertical_alignment = ft.MainAxisAlignment.CENTER
 
 
-ft.app(target=main)
+ft.app(target=main, view=ft.AppView.WEB_BROWSER)
