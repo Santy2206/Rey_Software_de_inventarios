@@ -1,6 +1,6 @@
 import flet as ft
 import psycopg2
-from views.dashboard import dashboard_card
+from dashboard import dashboard_card
 
 # conexion = psycopg2.connect(
 # host="localhost",
