@@ -13,7 +13,7 @@ class AuthService:
             res = (
                 supabase.table("usuarios")
                 .select("*")
-                .eq("usuario", username)
+                .eq("nombre", username)
                 .eq("password", password)
                 .execute()
             )

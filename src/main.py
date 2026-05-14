@@ -14,7 +14,7 @@ def main(page: ft.Page):
 
         if resultado["success"]:
             page.snack_bar = ft.SnackBar(ft.Text(resultado["message"]), bgcolor="green")
-            # Aquí podrías cambiar de vista: page.go("/dashboard")
+
         else:
             page.snack_bar = ft.SnackBar(ft.Text(resultado["message"]), bgcolor="black")
 
