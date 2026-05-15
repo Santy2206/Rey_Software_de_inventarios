@@ -1,5 +1,4 @@
 import flet as ft
-import psycopg2
 from dashboard import dashboard_card
 
 # conexion = psycopg2.connect(
