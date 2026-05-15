@@ -1,5 +1,5 @@
 import flet as ft
-from ui.views.login import LoginView
+from views.login import LoginView
 from services.auth_service import AuthService
 
 
