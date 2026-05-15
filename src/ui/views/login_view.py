@@ -1,3 +1,23 @@
+"""
+Vista de la pantalla de inicio de sesión.
+
+Retorna un Container de Flet con:
+- Campos de texto para usuario y contraseña.
+- Botón 'INGRESAR' que dispara el callback on_login.
+
+Parámetros:
+    on_login (callable): Función que se llama con (usuario: str, contraseña: str)
+                        cuando el usuario hace clic en el botón.
+
+Retorna:
+    ft.Container: La tarjeta de login completa, lista para agregar a la página.
+
+Reglas:
+    - SIN lógica de negocio — solo diseño de interfaz.
+    - SIN llamadas directas a Supabase o AuthService.
+    - SIN acceso al objeto `page` — se comunica solo mediante callbacks.
+"""
+
 import flet as ft
 
 

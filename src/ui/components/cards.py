@@ -1,3 +1,20 @@
+"""
+Componentes de tarjetas reutilizables para la interfaz.
+
+Provee funciones pequeñas y sin estado que construyen widgets
+usados en el dashboard y otras vistas.
+
+Funciones:
+    dashboard_card(titulo, numero, subtitulo) -> ft.Container
+        Retorna una tarjeta estilizada que muestra un título,
+        un número o valor principal, y un subtítulo.
+
+Reglas:
+    - Las funciones deben ser puras: mismos argumentos → mismo widget.
+    - SIN estado, SIN callbacks, SIN lógica de negocio.
+    - Puede ser importado por cualquier vista que necesite estos widgets.
+"""
+
 import flet as ft
 
 

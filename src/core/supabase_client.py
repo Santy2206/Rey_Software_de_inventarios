@@ -1,3 +1,17 @@
+"""
+Conexión singleton a Supabase.
+
+Lee SUPABASE_URL y SUPABASE_KEY desde el archivo .env y crea
+una única instancia del cliente compartida en toda la aplicación.
+
+Lanza:
+    ValueError: Si alguna de las dos variables de entorno falta.
+
+Uso:
+    from src.core.supabase_client import supabase
+    resultado = supabase.table("usuarios").select("*").execute()
+"""
+
 import os
 from dotenv import load_dotenv
 from supabase import create_client, Client

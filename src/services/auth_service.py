@@ -1,3 +1,24 @@
+"""
+Servicio de autenticación.
+
+Maneja toda la lógica de inicio de sesión contra Supabase:
+1. Busca el correo del usuario por su nombre de usuario en la tabla 'usuarios'.
+2. Autentica mediante Supabase Auth (sign_in_with_password).
+3. Devuelve un diccionario con el resultado — nunca lanza excepciones a la UI.
+
+Retorna:
+    dict: {
+        "success" (bool)   : Si el login fue exitoso o no.
+        "message" (str)    : Mensaje legible para mostrar al usuario.
+        "rol"     (str)    : Rol del usuario — solo presente si success es True.
+    }
+
+Reglas:
+    - SIN importaciones de Flet.
+    - SIN interacción directa con la página ni los controles.
+    - Todos los errores se capturan internamente y se retornan como diccionarios.
+"""
+
 from src.core.supabase_client import supabase
 
 

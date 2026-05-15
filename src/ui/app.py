@@ -1,3 +1,19 @@
+"""
+Router principal y manejador de estado de la página.
+
+Es dueño del objeto `page` de Flet y es responsable de:
+- Navegar entre vistas (login → dashboard → ...).
+- Pasar callbacks (on_login, on_logout) a las vistas.
+- Manejar las acciones principales del usuario.
+- Mostrar SnackBars con mensajes de error.
+
+La navegación se hace a través de la función interna `navigate_to(nombre_vista)`.
+
+Reglas:
+    - Es el ÚNICO archivo que llama page.clean(), page.add() y page.update().
+    - Las vistas NUNCA deben recibir el objeto `page` directamente.
+"""
+
 import flet as ft
 from src.services.auth_service import AuthService
 from src.ui.views.login_view import LoginView

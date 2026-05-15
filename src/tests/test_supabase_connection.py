@@ -1,3 +1,20 @@
+"""
+Pruebas de integración para la conexión a Supabase.
+
+Verifica que:
+- SUPABASE_URL y SUPABASE_KEY están presentes en el entorno.
+- El cliente de Supabase se puede instanciar sin errores.
+- Una consulta básica a la tabla 'usuarios' retorna una respuesta válida.
+
+Uso:
+    pytest src/tests/test_supabase_connection.py -v
+
+Nota:
+    Requiere un archivo .env válido con credenciales reales.
+    Estas pruebas hacen llamadas reales a la red — no ejecutar
+    en integración continua (CI) sin configurar los secretos primero.
+"""
+
 import sys
 from supabase import create_client
 
