@@ -1,4 +1,4 @@
-from core.supabase_client import supabase
+from src.core.supabase_client import supabase
 
 
 class AuthService:
