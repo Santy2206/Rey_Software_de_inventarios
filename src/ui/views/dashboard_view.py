@@ -21,45 +21,104 @@ Reglas:
 """
 
 import flet as ft
-from src.ui.components.cards import dashboard_card  # ← import the card component
+from src.ui.components.cards import dashboard_card
 
 
-def DashboardView(rol: str, on_logout):  # ✅ correct signature
+def sidebar_item(icon, text):
+    return ft.Container(
+        padding=10,
+        border_radius=10,
+        content=ft.Row(
+            controls=[
+                ft.Icon(icon, color="white", size=20),
+                ft.Text(text, color="white", size=14),
+            ]
+        ),
+    )
 
-    return ft.Container(  # ✅ single return, the real dashboard
-        expand=True,
-        bgcolor="#f5f5f5",
+
+def DashboardView(rol: str, on_logout):
+
+    sidebar = ft.Container(
+        width=220,
+        bgcolor="#b3001b",
         padding=20,
         content=ft.Column(
+            expand=True,
+            spacing=20,
             controls=[
-                ft.Row(
-                    alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+
+                # LOGO / TITULO
+                ft.Column(
+                    spacing=5,
                     controls=[
-                        ft.Text("Dashboard", size=30, weight="bold"),
                         ft.Text(
-                            "Panel Principal", color="gray"
-                        ),  # ✅ lowercase 'color'
+                            "👑 REY",
+                            size=24,
+                            weight="bold",
+                            color="white",
+                        ),
+                        ft.Text(
+                            "Inventarios",
+                            color="white70",
+                            size=12,
+                        ),
                     ],
                 ),
-                ft.Container(
-                    bgcolor="white",
-                    padding=10,
-                    border_radius=30,
-                    content=ft.Text("🟢 Online", color="green"),
-                ),
-                # Example cards — replace with real data later
-                ft.Row(
-                    controls=[
-                        dashboard_card("Productos", "0", "Total en inventario"),
-                        dashboard_card("Ventas hoy", "$0", "Últimas 24 h"),
-                    ]
-                ),
+
+                ft.Divider(color="white24"),
+
+                # MENÚ
+                sidebar_item(ft.Icons.DASHBOARD, "Dashboard"),
+                sidebar_item(ft.Icons.WAREHOUSE, "Bodegas"),
+                sidebar_item(ft.Icons.INVENTORY_2, "Productos"),
+                sidebar_item(ft.Icons.SWAP_HORIZ, "Movimientos"),
+                sidebar_item(ft.Icons.SHOPPING_CART, "Ventas"),
+                sidebar_item(ft.Icons.PEOPLE, "Clientes"),
+                sidebar_item(ft.Icons.BAR_CHART, "Reportes"),
+                sidebar_item(ft.Icons.DESCRIPTION, "Bitácora"),
+
+                ft.Container(expand=True),
+
+                # BOTON ABAJO
                 ft.ElevatedButton(
-                    "Cerrar Sesión",
-                    on_click=lambda _: on_logout(),  # ✅ wires the logout callback
-                    bgcolor="#c1273d",
+                    "Cerrar sesión",
+                    icon=ft.Icons.LOGOUT,
+                    width=180,
+                    bgcolor="#8b0015",
                     color="white",
+                    on_click=lambda _: on_logout(),
+                ),
+            ],
+        ),
+    )
+
+    # CONTENIDO DERECHO
+    content = ft.Container(
+        expand=True,
+        padding=20,
+        bgcolor="#f5f5f5",
+        content=ft.Column(
+            controls=[
+                ft.Text(
+                    "Dashboard",
+                    size=30,
+                    weight="bold",
+                ),
+                ft.Text(
+                    "Panel Principal",
+                    color="gray",
                 ),
             ]
         ),
     )
+
+    return ft.Row(
+        expand=True,
+        spacing=0,
+        controls=[
+            sidebar,
+            content,
+        ],
+    )
+        #AQUI
