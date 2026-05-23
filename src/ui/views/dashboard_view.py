@@ -21,43 +21,272 @@ Reglas:
 """
 
 import flet as ft
-from src.ui.components.cards import dashboard_card
 
 
-def sidebar_item(icon, text):
+
+
+# =====================================================
+# BOTONES DEL SIDEBAR
+# =====================================================
+# Esta función crea cada botón del menú izquierdo
+#
+# icon       -> icono
+# text       -> texto visible
+# page_name  -> nombre interno de la página
+# on_click   -> función que cambia el contenido
+# =====================================================
+def sidebar_item(icon, text, page_name, on_click):
+
     return ft.Container(
+
         padding=10,
+
         border_radius=10,
+
+        # =================================================
+        # EVENTO CLICK
+        # =================================================
+        on_click=lambda e: on_click(page_name),
+
         content=ft.Row(
             controls=[
-                ft.Icon(icon, color="white", size=20),
-                ft.Text(text, color="white", size=14),
+
+                ft.Icon(
+                    icon,
+                    color="white",
+                    size=20,
+                ),
+
+                ft.Text(
+                    text,
+                    color="white",
+                    size=14,
+                ),
             ]
         ),
     )
 
 
+# =====================================================
+# VISTA PRINCIPAL
+# =====================================================
 def DashboardView(rol: str, on_logout):
 
+    # =================================================
+    # AREA DINAMICA DERECHA
+    # =================================================
+    # Aquí aparecerá:
+    # - dashboard
+    # - productos
+    # - ventas
+    # =================================================
+    content_area = ft.Column(
+        expand=True,
+        spacing=20,
+    )
+
+    # =================================================
+    # FUNCION PARA CAMBIAR CONTENIDO
+    # =================================================
+    def load_content(page_name):
+
+        # =============================================
+        # LIMPIAR CONTENIDO ANTERIOR
+        # =============================================
+        content_area.controls.clear()
+
+        # =============================================
+        # DASHBOARD
+        # =============================================
+        if page_name == "dashboard":
+
+            content_area.controls.extend([
+
+                ft.Text(
+                    "DASHBOARD",
+                    size=30,
+                    weight="bold",
+                    color="black",
+                ),
+
+                ft.Text(
+                    "PANEL PRINCIPAL",
+                    color="gray",
+                    size=14,
+                ),
+
+                # =====================================
+                # CARDS
+                # =====================================
+                ft.Row(
+                    spacing=20,
+                    controls=[
+
+                        # CARD 1
+                        ft.Container(
+                            expand=True,
+                            bgcolor="white",
+                            padding=20,
+                            border_radius=15,
+
+                            content=ft.Column(
+                                controls=[
+
+                                    ft.Text(
+                                        "PRODUCTOS",
+                                        size=12,
+                                        color="gray",
+                                        weight="bold",
+                                    ),
+
+                                    ft.Text(
+                                        "0",
+                                        size=30,
+                                        weight="bold",
+                                    ),
+
+                                    ft.Text(
+                                        "Total inventario",
+                                        color="gray",
+                                    ),
+                                ]
+                            ),
+                        ),
+
+                        # CARD 2
+                        ft.Container(
+                            expand=True,
+                            bgcolor="white",
+                            padding=20,
+                            border_radius=15,
+
+                            content=ft.Column(
+                                controls=[
+
+                                    ft.Text(
+                                        "VENTAS",
+                                        size=12,
+                                        color="gray",
+                                        weight="bold",
+                                    ),
+
+                                    ft.Text(
+                                        "$0",
+                                        size=30,
+                                        weight="bold",
+                                    ),
+
+                                    ft.Text(
+                                        "Ventas hoy",
+                                        color="gray",
+                                    ),
+                                ]
+                            ),
+                        ),
+                    ],
+                ),
+            ])
+
+        # =============================================
+        # PRODUCTOS
+        # =============================================
+        elif page_name == "PRODUCTOS":
+
+            content_area.controls.extend([
+
+                ft.Text(
+                    "PRODUCTOS",
+                    size=30,
+                    weight="bold",
+                ),
+
+                ft.Text(
+                    "Aquí irán los productos",
+                    color="gray",
+                ),
+            ])
+
+        # =============================================
+        # VENTAS
+        # =============================================
+        elif page_name == "VENTAS":
+
+            content_area.controls.extend([
+
+                ft.Text(
+                    "VENTAS",
+                    size=30,
+                    weight="bold",
+                ),
+
+                ft.Text(
+                    "Aquí irán las ventas",
+                    color="gray",
+                ),
+            ])
+
+        # =============================================
+        # BODEGAS
+        # =============================================
+        elif page_name == "BODEGAS":
+
+            content_area.controls.extend([
+
+                ft.Text(
+                    "BODEGAS",
+                    size=30,
+                    weight="bold",
+                ),
+
+                ft.Text(
+                    "Aquí irán las bodegas",
+                    color="gray",
+                ),
+            ])
+
+        # =============================================
+        # ACTUALIZAR INTERFAZ
+        # =============================================
+        content_area.update()
+
+    # =================================================
+    # CARGAR DASHBOARD AL INICIAR
+    # =================================================
+    load_content("dashboard")
+
+    # =================================================
+    # SIDEBAR IZQUIERDO
+    # =================================================
     sidebar = ft.Container(
+
         width=220,
+
         bgcolor="#b3001b",
+
         padding=20,
+
         content=ft.Column(
+
             expand=True,
+
             spacing=20,
+
             controls=[
 
+                # =====================================
                 # LOGO / TITULO
+                # =====================================
                 ft.Column(
                     spacing=5,
                     controls=[
+
                         ft.Text(
                             "👑 REY",
                             size=24,
                             weight="bold",
                             color="white",
                         ),
+
                         ft.Text(
                             "Inventarios",
                             color="white70",
@@ -68,19 +297,74 @@ def DashboardView(rol: str, on_logout):
 
                 ft.Divider(color="white24"),
 
-                # MENÚ
-                sidebar_item(ft.Icons.DASHBOARD, "Dashboard"),
-                sidebar_item(ft.Icons.WAREHOUSE, "Bodegas"),
-                sidebar_item(ft.Icons.INVENTORY_2, "Productos"),
-                sidebar_item(ft.Icons.SWAP_HORIZ, "Movimientos"),
-                sidebar_item(ft.Icons.SHOPPING_CART, "Ventas"),
-                sidebar_item(ft.Icons.PEOPLE, "Clientes"),
-                sidebar_item(ft.Icons.BAR_CHART, "Reportes"),
-                sidebar_item(ft.Icons.DESCRIPTION, "Bitácora"),
+                # =====================================
+                # MENU
+                # =====================================
 
+                sidebar_item(
+                    ft.Icons.DASHBOARD,
+                    "Dashboard",
+                    "dashboard",
+                    load_content,
+                ),
+
+                sidebar_item(
+                    ft.Icons.WAREHOUSE,
+                    "Bodegas",
+                    "BODEGAS",
+                    load_content,
+                ),
+
+                sidebar_item(
+                    ft.Icons.INVENTORY_2,
+                    "Productos",
+                    "PRODUCTOS",
+                    load_content,
+                ),
+
+                sidebar_item(
+                    ft.Icons.SWAP_HORIZ,
+                    "Movimientos",
+                    "MOVIMIENTOS",
+                    load_content,
+                ),
+
+                sidebar_item(
+                    ft.Icons.SHOPPING_CART,
+                    "Ventas",
+                    "VENTAS",
+                    load_content,
+                ),
+
+                sidebar_item(
+                    ft.Icons.PEOPLE,
+                    "Clientes",
+                    "CLIENTES",
+                    load_content,
+                ),
+
+                sidebar_item(
+                    ft.Icons.BAR_CHART,
+                    "Reportes",
+                    "REPORTES",
+                    load_content,
+                ),
+
+                sidebar_item(
+                    ft.Icons.DESCRIPTION,
+                    "Bitácora",
+                    "BITACORA",
+                    load_content,
+                ),
+
+                # =====================================
+                # EMPUJAR BOTON HACIA ABAJO
+                # =====================================
                 ft.Container(expand=True),
 
-                # BOTON ABAJO
+                # =====================================
+                # BOTON LOGOUT
+                # =====================================
                 ft.ElevatedButton(
                     "Cerrar sesión",
                     icon=ft.Icons.LOGOUT,
@@ -93,32 +377,35 @@ def DashboardView(rol: str, on_logout):
         ),
     )
 
+    # =================================================
     # CONTENIDO DERECHO
+    # =================================================
     content = ft.Container(
+
         expand=True,
+
         padding=20,
-        bgcolor="#f5f5f5",
-        content=ft.Column(
-            controls=[
-                ft.Text(
-                    "Dashboard",
-                    size=30,
-                    weight="bold",
-                ),
-                ft.Text(
-                    "Panel Principal",
-                    color="gray",
-                ),
-            ]
-        ),
+
+        bgcolor="#F5F5F5",
+
+        # =============================================
+        # AREA DINAMICA
+        # =============================================
+        content=content_area,
     )
 
+    # =================================================
+    # RETORNO FINAL
+    # =================================================
     return ft.Row(
+
         expand=True,
+
         spacing=0,
+
         controls=[
             sidebar,
             content,
         ],
     )
-        #AQUI
+        
