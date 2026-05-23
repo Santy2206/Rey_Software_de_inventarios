@@ -37,7 +37,7 @@ class AuthService:
                 .eq(
                     "username", username_typed
                 )  # Verifica que sea 'username' y no 'nombre'
-                .single()
+                .maybe_single()
                 .execute()
             )
 
