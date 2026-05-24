@@ -94,7 +94,7 @@ REY_SOFTWARE_DE_INVENTARIOS/
 ### 1. Clonar el repositorio
 
 ```bash
-git clone https://github.com/tu-usuario/REY_Software_de_inventarios.git
+git clone https://github.com/Santy2206/Rey_Software_de_inventarios.git
 cd REY_Software_de_inventarios
 ```
 
