@@ -10,9 +10,6 @@ venv/
 env/
 ENV/
 
-# Archivos de configuración de entorno
-.env
-.env.*
 
 # Distribución / packaging
 build/
@@ -60,3 +57,22 @@ assets/dist/
 # Archivos de sesión / runtime
 *.pid
 *.seed
+
+# Supabase
+supabase
+supabase/.temp/
+supabase/temp/
+.supabase/config.toml
+
+# Local environment
+.env
+.env.local
+
+# Supabase generated files
+**/pooler-url
+**/project-ref
+**/rest-version
+**/storage-version
+**/gotrue-version
+**/cli-latest
+**/_current_branch
