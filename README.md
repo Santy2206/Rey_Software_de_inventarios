@@ -101,7 +101,7 @@ cd REY_Software_de_inventarios
 ### 2. Crear y activar el entorno virtual
 
 ```bash
-# Windows
+# Windows #python 3.12
 python -m venv .venv
 .venv\Scripts\activate
 
@@ -123,8 +123,8 @@ pip install -r requirements.txt
 Crea un archivo `.env` en la raíz del proyecto con las siguientes variables:
 
 ```env
-SUPABASE_URL=https://tu-proyecto.supabase.co
-SUPABASE_KEY=tu-anon-key
+SUPABASE_URL=https://ojhnsyorsaowszkmfcmf.supabase.co
+SUPABASE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9qaG5zeW9yc2Fvd3N6a21mY21mIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg0NDE5MDUsImV4cCI6MjA5NDAxNzkwNX0.IHGjm6TIBJuZ-VyhX0GSrFMRYJUNPgbQO8EnWFCFvRQ
 ```
 
 > ⚠️ **Nunca subas el archivo `.env` a Git.** Ya está incluido en `.gitignore`.
