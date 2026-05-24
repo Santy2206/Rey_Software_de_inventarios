@@ -14,3 +14,13 @@ Campos:
 Reglas:
     - Sin importaciones de Flet ni de Supabase — solo Python puro.
 """
+
+from dataclasses import dataclass
+
+
+@dataclass
+class User:
+    id: str
+    username: str
+    email: str
+    rol: str
