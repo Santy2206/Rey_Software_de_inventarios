@@ -1,7 +1,7 @@
 import flet as ft
 
 
-def main(page: ft.page):
+def main(page: ft.Page):
     page.title = "Productos"
     page.bgcolor ="#f5f6fa"
     page.padding = 20
