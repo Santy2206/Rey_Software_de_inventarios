@@ -31,7 +31,6 @@ class _ProductosView(ft.Container):
         self.expand = True
         self.bgcolor = "#f5f6fa"
         self.padding = 20
-
         self._bodegas: list[dict] = []
         self._productos_recientes: list[dict] = []
 
@@ -68,20 +67,18 @@ class _ProductosView(ft.Container):
             ),
             value="u",
         )
-        self._campo_bodega = ft.Dropdown(  # ✅ Dropdown (mayúscula)
+        self._campo_bodega = ft.Dropdown(
             label="Bodega *",
             expand=True,
             border_radius=10,
             options=[],
         )
 
-        
         self._lista_recientes = ft.Column(
             spacing=0,
             controls=[ft.Text("Cargando...", color="grey", italic=True)],
         )
 
-      
         self._snackbar = ft.SnackBar(content=ft.Text(""), show_close_icon=True)
 
         self.content = ft.Column(
@@ -115,8 +112,6 @@ class _ProductosView(ft.Container):
             ],
         )
 
-  
-
     def did_mount(self):
         """
         Registra el snackbar en page.overlay (una sola vez)
@@ -126,22 +121,19 @@ class _ProductosView(ft.Container):
         self.page.update()
         threading.Thread(target=self._cargar_datos_iniciales, daemon=True).start()
 
-
     def _cargar_datos_iniciales(self):
         """
         Carga las bodegas para el dropdown y los últimos 5 productos
         para el panel de registros recientes.
         """
-        # Bodegas → para el dropdown
+
         res_bodegas = BodegasService.get_all()
         if res_bodegas["success"]:
             self._bodegas = res_bodegas["data"]
             self._campo_bodega.options = [
-                ft.DropdownOption(key=b["id"], text=b["nombre"])  
-                for b in self._bodegas
+                ft.DropdownOption(key=b["id"], text=b["nombre"]) for b in self._bodegas
             ]
 
-  
         res_productos = ProductosService.get_all()
         if res_productos["success"]:
             self._productos_recientes = res_productos["data"][:5]
@@ -168,8 +160,6 @@ class _ProductosView(ft.Container):
             )
             self._lista_recientes.controls.append(ft.Divider())
 
-    ─
-
     def _formulario(self):
         return ft.Container(
             bgcolor="white",
@@ -178,37 +168,36 @@ class _ProductosView(ft.Container):
             content=ft.Column(
                 spacing=0,
                 controls=[
-                   
                     ft.Container(
                         bgcolor="#b40012",
                         padding=20,
                         border_radius=ft.border_radius.only(top_left=15, top_right=15),
-                        content=ft.Row(  
-                            alignment=ft.MainAxisAlignment.SPACE_BETWEEN,  
+                        content=ft.Row(  # ✅ Row (mayúscula)
+                            alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                            controls=[
                                 ft.Column(
                                     spacing=5,
                                     controls=[
-                                        ft.Text(  
+                                        ft.Text(
                                             "REGISTRAR PRODUCTO",
                                             color="white",
                                             weight=ft.FontWeight.BOLD,
                                             size=22,
                                         ),
-                                        ft.Text( 
+                                        ft.Text(
                                             "Complete todos los campos obligatorios (*)",
                                             color="white",
                                         ),
                                     ],
                                 ),
                                 ft.Icon(
-                                    ft.Icons.STAR,  
+                                    ft.Icons.STAR,
                                     color="yellow",
                                     size=30,
                                 ),
                             ],
                         ),
                     ),
-                    
                     ft.Container(
                         padding=25,
                         content=ft.Column(
@@ -230,16 +219,16 @@ class _ProductosView(ft.Container):
                                 self._campo_bodega,
                                 ft.Row(
                                     controls=[
-                                        ft.OutlinedButton( 
+                                        ft.OutlinedButton(
                                             "CANCELAR / VOLVER",
                                             expand=True,
-                                            height=50, 
+                                            height=50,
                                             on_click=self._limpiar_formulario,
                                         ),
                                         ft.FilledButton(
                                             "GUARDAR PRODUCTO",
                                             expand=True,
-                                            height=50, 
+                                            height=50,
                                             style=ft.ButtonStyle(
                                                 bgcolor="#b40012",
                                                 color="white",
@@ -254,8 +243,6 @@ class _ProductosView(ft.Container):
                 ],
             ),
         )
-
-    
 
     def _panel_derecho(self):
         return ft.Column(
@@ -339,7 +326,7 @@ class _ProductosView(ft.Container):
             self._mostrar_snack(result["message"], error=not result["success"])
             if result["success"]:
                 self._limpiar_formulario()
-                self._cargar_datos_iniciales() 
+                self._cargar_datos_iniciales()  # refresca la lista reciente
 
         threading.Thread(target=_worker, daemon=True).start()
 
@@ -351,7 +338,6 @@ class _ProductosView(ft.Container):
         self._campo_unidad.value = "u"
         self._campo_bodega.value = None
         self.page.update()
-
 
     def _mostrar_snack(self, mensaje: str, error: bool = False):
         self._snackbar.content = ft.Text(mensaje, color="white")
