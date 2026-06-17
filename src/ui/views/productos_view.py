@@ -172,7 +172,7 @@ class _ProductosView(ft.Container):
                         bgcolor="#b40012",
                         padding=20,
                         border_radius=ft.border_radius.only(top_left=15, top_right=15),
-                        content=ft.Row(  # ✅ Row (mayúscula)
+                        content=ft.Row(
                             alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
                             controls=[
                                 ft.Column(
