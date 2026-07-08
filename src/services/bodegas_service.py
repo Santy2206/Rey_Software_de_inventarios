@@ -170,63 +170,72 @@ class BodegasService:
                 "message": f"Error al eliminar bodega: {error_msg}",
             }
 
-#crear un diccionario que contenga [fecha ,hora ], [usuario ],[rol] ,[accion ] y [descripcion ]
-#array de las horas 
-fecha_hora=[]
-hora=[]
- #array de las horas 
-usuarios_nuevos=[]
-contraeña_nueva=[]
-#roles 
-administrador=[]
-#acciones 
-ventas=[]
-clientes=[]
-bodegas=[]
-#//////////////////////
-DESCRIPCION=[]
-#funcionespara cada uno y despues poner en un diccionario 
-def DESCRIPCION(): 
+
+# crear un diccionario que contenga [fecha ,hora ], [usuario ],[rol] ,[accion ] y [descripcion ]
+# array de las horas
+fecha_hora = []
+hora = []
+# array de las horas
+usuarios_nuevos = []
+contraeña_nueva = []
+# roles
+administrador = []
+# acciones
+ventas = []
+clientes = []
+bodegas = []
+# //////////////////////
+DESCRIPCION = []
+
+
+# funcionespara cada uno y despues poner en un diccionario
+def DESCRIPCION():
     while True:
         try:
-            descrip=str(input("Señor usuario:anexe una descripcion breve ")) 
+            descrip = str(input("Señor usuario:anexe una descripcion breve "))
             DESCRIPCION.append(descrip)
             print("señor usuaio la descripcion fue guardada exitosamente")
             break
         except ValueError:
-           print("Sñor usuario su descripcion no cumple con los parametros establecidos")
-        
+            print(
+                "Sñor usuario su descripcion no cumple con los parametros establecidos"
+            )
+
+
 def usuarios():
-   print("ingrese la opcion deseada")
-   print("1 usuarios registrados")
-   print("2 registrar usuario")
-   opcion=int(input("ingrese la opcion deseada"))
-   while True:
-        try:    
-            if (opcion==1): 
+    print("ingrese la opcion deseada")
+    print("1 usuarios registrados")
+    print("2 registrar usuario")
+    opcion = int(input("ingrese la opcion deseada"))
+    while True:
+        try:
+            if opcion == 1:
                 while True:
-                           nuevo_usuarios=str(input("ingrese el nuevo usuario"))
-                           usuarios_nuevos.append(nuevo_usuarios)
-                           contraseña=input("ingrese una contraseña alfanumerica")
-                           if contraseña.isalnum():
-                              contraeña_nueva.append(contraseña)
-                              print("¡Contraseña alfanumérica registrada con éxito!")
-                           else:
-                               break
-                               print("la contraseña no es alphanumerica vuelva a intentarlo nuevamente")
-            elif(opcion==2):
-                 for usuarios_nuevos in nuevo_usuarios:
-                     print("////usuarios registrados////")
-                     print("=",usuarios_nuevos)
-                     break
+                    nuevo_usuarios = str(input("ingrese el nuevo usuario"))
+                    usuarios_nuevos.append(nuevo_usuarios)
+                    contraseña = input("ingrese una contraseña alfanumerica")
+                    if contraseña.isalnum():
+                        contraeña_nueva.append(contraseña)
+                        print("¡Contraseña alfanumérica registrada con éxito!")
+                    else:
+                        break
+                        print(
+                            "la contraseña no es alphanumerica vuelva a intentarlo nuevamente"
+                        )
+            elif opcion == 2:
+                for usuarios_nuevos in nuevo_usuarios:
+                    print("////usuarios registrados////")
+                    print("=", usuarios_nuevos)
+                    break
         except ValueError:
             print("no existe la opcion deseada")
-                    
-                                   
+
+
 from datetime import datetime
-                             
+
+
 def fecha_hora():
-   while True:
+    while True:
         fecha_input = input("Ingrese la fecha (DD/MM/AAAA): ")
         try:
             fecha_validada = datetime.strptime(fecha_input, "%d/%m/%Y").date()
@@ -235,9 +244,8 @@ def fecha_hora():
         except ValueError:
             print(" Fecha incorrecta. Use el formato Día/Mes/Año.")
 
-    
         while True:
-           hora_input = input("Ingrese la hora (HH:MM): ")
+            hora_input = input("Ingrese la hora (HH:MM): ")
         try:
             hora_validada = datetime.strptime(hora_input, "%H:%M").time()
             hora = hora_validada.strftime("%H:%M")
@@ -245,11 +253,11 @@ def fecha_hora():
         except ValueError:
             print(" Hora incorrecta. Use el formato de 24 horas.")
 
-    
-        return [fecha_final, hora_final] 
-    
+        return [fecha_final, hora_final]
+
+
 def accion():
-    
+
     print("ingrese la opcion deseada:")
     print("1 agregar ventas")
     print("2 historial de ventas")
@@ -257,59 +265,59 @@ def accion():
     print("4 historial de ventas")
     print("5 ingresar bodegas")
     print("6 historial de bodegas")
-    opcion=("ingrese la opcion deseada")
+    opcion = "ingrese la opcion deseada"
     while True:
-            try:
-                if(opcion==1):
-                  while True:
+        try:
+            if opcion == 1:
+                while True:
                     try:
-                     vent=str("ingrese el producto del cual vendio")
-                     ventas.append(vent)
-                     break
+                        vent = str("ingrese el producto del cual vendio")
+                        ventas.append(vent)
+                        break
                     except ValueError:
-                     print("error vuelva a intentarlos")
-                if(opcion==2):
-                 for ventas in  vent:
-                     print("///////////historial de ventas////////////")
-                     print("=",ventas)
-                       
-                if(opcion==3):
-                   while True:
-                    try:
-                      cly=str(input("ingrese el cliente que va a comprar"))
-                      clientes.appen(cly)
-                      break  
-                    except ValueError:
-                     print("error vuelva a intentarlos")
-                if(opcion==4):
-                  for clientes in cly: 
-                    print("//// Historial////")
-                    print("=",clientes)
-                    
-                if(opcion==5):
-                  while True:
-                     try:
-                         bod=int(input("ingrese el numero de bodegas que desea ingresar"))
-                         bodegas.append(bod)
-                         break
-                     except ValueError:
-                       print("el numero de bodegas no es valido")
-                if(opcion==6):
-                    for bodegas in bod:
-                        print("///historial////")
-                        print("=",bodegas)
-            except ValueError: 
-                print("la opcion no es valida")
-                
-                     
-                 
-                 
-          #diccionario donde pueda relacionar todas las funciones         
-bitacora= {
-   "fechita":fecha_hora(), #VARABLE TEMPORAL Q RELACIONA EL DICCIONARIO
-    "objet":usuarios(),
-    "descrip":DESCRIPCION(),
-    "aci":accion()
-    }
-print(bitacora)
+                        print("error vuelva a intentarlos")
+            if opcion == 2:
+                for ventas in vent:
+                    print("///////////historial de ventas////////////")
+                    print("=", ventas)
 
+            if opcion == 3:
+                while True:
+                    try:
+                        cly = str(input("ingrese el cliente que va a comprar"))
+                        clientes.appen(cly)
+                        break
+                    except ValueError:
+                        print("error vuelva a intentarlos")
+            if opcion == 4:
+                for clientes in cly:
+                    print("//// Historial////")
+                    print("=", clientes)
+
+            if opcion == 5:
+                while True:
+                    try:
+                        bod = int(
+                            input("ingrese el numero de bodegas que desea ingresar")
+                        )
+                        bodegas.append(bod)
+                        break
+                    except ValueError:
+                        print("el numero de bodegas no es valido")
+            if opcion == 6:
+                for bodegas in bod:
+                    print("///historial////")
+                    print("=", bodegas)
+        except ValueError:
+            print("la opcion no es valida")
+
+    # diccionario donde pueda relacionar todas las funciones
+
+
+bitacora = {
+    "fechita": fecha_hora(),  # VARABLE TEMPORAL Q RELACIONA EL DICCIONARIO
+    "objet": usuarios(),
+    "descrip": DESCRIPCION(),
+    "aci": accion(),
+}
+print(bitacora)
