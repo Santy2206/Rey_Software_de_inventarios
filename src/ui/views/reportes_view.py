@@ -73,9 +73,9 @@ class _ReportesView(ft.Container):
                                 label="Mes",
                                 value="Marzo",
                                 options=[
-                                    ft.DropdownOption("Enero"),  # ✅ fixed
-                                    ft.DropdownOption("Febrero"),  # ✅ fixed
-                                    ft.DropdownOption("Marzo"),  # ✅ fixed
+                                    ft.DropdownOption("Enero"),  #  fixed
+                                    ft.DropdownOption("Febrero"),  #  fixed
+                                    ft.DropdownOption("Marzo"),  #  fixed
                                 ],
                             ),
                             ft.Dropdown(
@@ -83,9 +83,9 @@ class _ReportesView(ft.Container):
                                 label="Año",
                                 value="2026",
                                 options=[
-                                    ft.DropdownOption("2024"),  # ✅ fixed
-                                    ft.DropdownOption("2025"),  # ✅ fixed
-                                    ft.DropdownOption("2026"),  # ✅ fixed
+                                    ft.DropdownOption("2024"),  #  fixed
+                                    ft.DropdownOption("2025"),  #  fixed
+                                    ft.DropdownOption("2026"),  #  fixed
                                 ],
                             ),
                             ft.ElevatedButton(
@@ -132,7 +132,7 @@ class _ReportesView(ft.Container):
                 blur_radius=8,
                 color=ft.Colors.BLACK12,
             ),
-            alignment=ft.Alignment(0, 0),  # ✅ fixed
+            alignment=ft.Alignment(0, 0),  #  fixed
             content=ft.Column(
                 alignment=ft.MainAxisAlignment.CENTER,
                 horizontal_alignment=ft.CrossAxisAlignment.CENTER,
