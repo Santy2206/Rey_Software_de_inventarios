@@ -1,22 +1,24 @@
 """
-Servicio de Productos.
+Servicio de Productos — versión BASE DE DATOS LOCAL.
 
-Maneja todas las operaciones de la tabla 'productos' en Supabase.
-Sigue el mismo patrón que auth_service.py:
+Ajustado a las columnas REALES de la tabla 'productos' tal como
+quedó creada en pgAdmin (distintas al diseño original en Supabase):
+
+    productos (id, bodega_id, nombre, descripcion, sku, precio,
+               stock_actual, creado_en)
+
+Mismo contrato de siempre:
   - Cada función usa try/except
   - Siempre retorna un diccionario con 'success' y 'message'
   - Si hay datos, los incluye bajo la llave 'data'
   - SIN importaciones de Flet — solo lógica pura
 
-Tabla esperada en Supabase:
-    productos (id, nombre, tipo, funcion, unidad_medida, stock, bodega_id)
-
-    unidad_medida solo puede ser: "gr" o "u"
+⚠️ productos_view.py sigue siendo un stub — cuando la construyan,
+   usen estos nombres de parámetro/columna (no 'tipo', 'funcion',
+   'unidad_medida' ni 'stock', que no existen en esta tabla).
 """
 
-from src.core.supabase_client import supabase
-
-UNIDADES_VALIDAS = ["gr", "u"]
+from src.core.local_db import run_query
 
 
 class ProductosService:
@@ -25,18 +27,23 @@ class ProductosService:
     def get_all():
         """
         Trae todos los productos.
-        Incluye la información de la bodega a la que pertenece cada uno.
+        Incluye el nombre de la bodega a la que pertenece cada uno.
         """
         print("--- Trayendo todos los productos ---")
         try:
-            res = supabase.table("productos").select("*, bodegas(nombre)").execute()
+            data = run_query("""
+                SELECT p.*, b.nombre AS bodega_nombre
+                FROM productos p
+                LEFT JOIN bodegas b ON p.bodega_id = b.id
+                ORDER BY p.nombre
+                """)
 
-            if not res.data:
+            if not data:
                 print("⚠️ No hay productos registrados aún")
                 return {"success": False, "message": "No hay productos registrados"}
 
-            print(f"✅ Se encontraron {len(res.data)} producto(s)")
-            return {"success": True, "message": "Productos obtenidos", "data": res.data}
+            print(f"✅ Se encontraron {len(data)} producto(s)")
+            return {"success": True, "message": "Productos obtenidos", "data": data}
 
         except Exception as e:
             error_msg = str(e)
@@ -56,18 +63,16 @@ class ProductosService:
         """
         print(f"--- Trayendo productos de bodega: {bodega_id} ---")
         try:
-            res = (
-                supabase.table("productos")
-                .select("*")
-                .eq("bodega_id", bodega_id)
-                .execute()
+            data = run_query(
+                "SELECT * FROM productos WHERE bodega_id = %s ORDER BY nombre",
+                (bodega_id,),
             )
 
-            if not res.data:
+            if not data:
                 return {"success": False, "message": "No hay productos en esta bodega"}
 
-            print(f"✅ Se encontraron {len(res.data)} producto(s) en la bodega")
-            return {"success": True, "message": "Productos obtenidos", "data": res.data}
+            print(f"✅ Se encontraron {len(data)} producto(s) en la bodega")
+            return {"success": True, "message": "Productos obtenidos", "data": data}
 
         except Exception as e:
             error_msg = str(e)
@@ -87,19 +92,22 @@ class ProductosService:
         """
         print(f"--- Buscando producto con id: {producto_id} ---")
         try:
-            res = (
-                supabase.table("productos")
-                .select("*, bodegas(nombre)")
-                .eq("id", producto_id)
-                .maybe_single()
-                .execute()
+            producto = run_query(
+                """
+                SELECT p.*, b.nombre AS bodega_nombre
+                FROM productos p
+                LEFT JOIN bodegas b ON p.bodega_id = b.id
+                WHERE p.id = %s
+                """,
+                (producto_id,),
+                fetch_one=True,
             )
 
-            if not res.data:
+            if not producto:
                 return {"success": False, "message": "Producto no encontrado"}
 
-            print(f"✅ Producto encontrado: {res.data['nombre']}")
-            return {"success": True, "message": "Producto encontrado", "data": res.data}
+            print(f"✅ Producto encontrado: {producto['nombre']}")
+            return {"success": True, "message": "Producto encontrado", "data": producto}
 
         except Exception as e:
             error_msg = str(e)
@@ -112,51 +120,44 @@ class ProductosService:
     @staticmethod
     def create(
         nombre: str,
-        tipo: str,
-        funcion: str,
-        unidad_medida: str,
-        stock: int,
+        descripcion: str,
+        sku: str,
+        precio: float,
+        stock_actual: int,
         bodega_id: str,
     ):
         """
         Crea un nuevo producto.
 
         Parámetros:
-            nombre:        nombre del producto, ej: "Perfume Floral 100ml"
-            tipo:          categoría, ej: "Perfume", "Envase", "Insumo"
-            funcion:       para qué sirve, ej: "Venta directa", "Empaque"
-            unidad_medida: solo "gr" (gramos) o "u" (unidades)
-            stock:         cantidad inicial disponible
-            bodega_id:     id de la bodega donde se almacena
+            nombre:       nombre del producto, ej: "Perfume Floral 100ml"
+            descripcion:  detalle libre del producto
+            sku:          código interno/referencia del producto
+            precio:       precio de venta
+            stock_actual: cantidad inicial disponible
+            bodega_id:    id de la bodega donde se almacena
         """
         print(f"--- Creando producto: {nombre} ---")
-
-        if unidad_medida not in UNIDADES_VALIDAS:
-            return {
-                "success": False,
-                "message": f"Unidad de medida inválida. Usa: {UNIDADES_VALIDAS}",
-            }
-
         try:
-            nuevo_producto = {
-                "nombre": nombre,
-                "tipo": tipo,
-                "funcion": funcion,
-                "unidad_medida": unidad_medida,
-                "stock": stock,
-                "bodega_id": bodega_id,
-            }
+            producto = run_query(
+                """
+                INSERT INTO productos
+                    (nombre, descripcion, sku, precio, stock_actual, bodega_id)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                RETURNING *
+                """,
+                (nombre, descripcion, sku, precio, stock_actual, bodega_id),
+                fetch_one=True,
+            )
 
-            res = supabase.table("productos").insert(nuevo_producto).execute()
-
-            if not res.data:
+            if not producto:
                 return {"success": False, "message": "No se pudo crear el producto"}
 
             print(f"✅ Producto '{nombre}' creado con éxito")
             return {
                 "success": True,
                 "message": f"Producto '{nombre}' creado con éxito",
-                "data": res.data[0],
+                "data": producto,
             }
 
         except Exception as e:
@@ -171,48 +172,42 @@ class ProductosService:
     def update(
         producto_id: str,
         nombre: str,
-        tipo: str,
-        funcion: str,
-        unidad_medida: str,
+        descripcion: str,
+        sku: str,
+        precio: float,
         bodega_id: str,
     ):
         """
         Actualiza los datos de un producto existente.
-        No actualiza el stock aquí — el stock solo cambia a través de movimientos.
+        No actualiza stock_actual aquí — el stock solo cambia a través
+        de movimientos (ver movimientos_service.py).
 
         Parámetros:
-            producto_id:   el id del producto a actualizar
-            nombre:        nuevo nombre
-            tipo:          nuevo tipo/categoría
-            funcion:       nueva función
-            unidad_medida: nueva unidad ("gr" o "u")
-            bodega_id:     nueva bodega asignada
+            producto_id: el id del producto a actualizar
+            nombre:      nuevo nombre
+            descripcion: nueva descripción
+            sku:         nuevo código/referencia
+            precio:      nuevo precio
+            bodega_id:   nueva bodega asignada
         """
         print(f"--- Actualizando producto id: {producto_id} ---")
-
-        if unidad_medida not in UNIDADES_VALIDAS:
-            return {
-                "success": False,
-                "message": f"Unidad de medida inválida. Usa: {UNIDADES_VALIDAS}",
-            }
-
         try:
-            datos_actualizados = {
-                "nombre": nombre,
-                "tipo": tipo,
-                "funcion": funcion,
-                "unidad_medida": unidad_medida,
-                "bodega_id": bodega_id,
-            }
-
-            res = (
-                supabase.table("productos")
-                .update(datos_actualizados)
-                .eq("id", producto_id)
-                .execute()
+            producto = run_query(
+                """
+                UPDATE productos
+                SET nombre = %s,
+                    descripcion = %s,
+                    sku = %s,
+                    precio = %s,
+                    bodega_id = %s
+                WHERE id = %s
+                RETURNING *
+                """,
+                (nombre, descripcion, sku, precio, bodega_id, producto_id),
+                fetch_one=True,
             )
 
-            if not res.data:
+            if not producto:
                 return {
                     "success": False,
                     "message": "Producto no encontrado para actualizar",
@@ -222,7 +217,7 @@ class ProductosService:
             return {
                 "success": True,
                 "message": "Producto actualizado con éxito",
-                "data": res.data[0],
+                "data": producto,
             }
 
         except Exception as e:
@@ -243,9 +238,13 @@ class ProductosService:
         """
         print(f"--- Eliminando producto id: {producto_id} ---")
         try:
-            res = supabase.table("productos").delete().eq("id", producto_id).execute()
+            eliminado = run_query(
+                "DELETE FROM productos WHERE id = %s RETURNING id",
+                (producto_id,),
+                fetch_one=True,
+            )
 
-            if not res.data:
+            if not eliminado:
                 return {
                     "success": False,
                     "message": "Producto no encontrado para eliminar",

@@ -1,18 +1,21 @@
 """
-Servicio de Bodegas.
+Servicio de Bodegas — versión BASE DE DATOS LOCAL.
 
-Maneja todas las operaciones de la tabla 'bodegas' en Supabase.
-Sigue el mismo patrón que auth_service.py:
+Maneja todas las operaciones de la tabla 'bodegas' en PostgreSQL local.
+Mismo contrato que la versión anterior (Supabase):
   - Cada función usa try/except
   - Siempre retorna un diccionario con 'success' y 'message'
   - Si hay datos, los incluye bajo la llave 'data'
   - SIN importaciones de Flet — solo lógica pura
 
-Tabla esperada en Supabase:
-    bodegas (id, nombre, tipo)
+El id se genera automáticamente en la base de datos (DEFAULT gen_random_uuid()),
+así que nunca lo mandamos nosotros al hacer INSERT.
+
+Tabla:
+    bodegas (id, nombre, tipo, created_at, dirty, synced_at)
 """
 
-from src.core.supabase_client import supabase
+from src.core.local_db import run_query
 
 
 class BodegasService:
@@ -22,14 +25,18 @@ class BodegasService:
         """Trae todas las bodegas de la base de datos."""
         print("--- Trayendo todas las bodegas ---")
         try:
-            res = supabase.table("bodegas").select("*").execute()
+            # 'ubicacion AS tipo' — bodegas_view.py espera la llave "tipo"
+            data = run_query(
+                "SELECT id, nombre, ubicacion AS tipo, creado_en "
+                "FROM bodegas ORDER BY nombre"
+            )
 
-            if not res.data:
+            if not data:
                 print("⚠️ No hay bodegas registradas aún")
                 return {"success": False, "message": "No hay bodegas registradas"}
 
-            print(f"✅ Se encontraron {len(res.data)} bodega(s)")
-            return {"success": True, "message": "Bodegas obtenidas", "data": res.data}
+            print(f"✅ Se encontraron {len(data)} bodega(s)")
+            return {"success": True, "message": "Bodegas obtenidas", "data": data}
 
         except Exception as e:
             error_msg = str(e)
@@ -49,20 +56,19 @@ class BodegasService:
         """
         print(f"--- Buscando bodega con id: {bodega_id} ---")
         try:
-            res = (
-                supabase.table("bodegas")
-                .select("*")
-                .eq("id", bodega_id)
-                .maybe_single()
-                .execute()
+            bodega = run_query(
+                "SELECT id, nombre, ubicacion AS tipo, creado_en "
+                "FROM bodegas WHERE id = %s",
+                (bodega_id,),
+                fetch_one=True,
             )
 
-            if not res.data:
+            if not bodega:
                 print(f"⚠️ Bodega con id {bodega_id} no encontrada")
                 return {"success": False, "message": "Bodega no encontrada"}
 
-            print(f"✅ Bodega encontrada: {res.data['nombre']}")
-            return {"success": True, "message": "Bodega encontrada", "data": res.data}
+            print(f"✅ Bodega encontrada: {bodega['nombre']}")
+            return {"success": True, "message": "Bodega encontrada", "data": bodega}
 
         except Exception as e:
             error_msg = str(e)
@@ -76,22 +82,30 @@ class BodegasService:
 
         Parámetros:
             nombre: nombre de la bodega, ej: "Bodega Principal"
-            tipo:   tipo de bodega, ej: "Fragancias", "Bala Negra", "General"
+            tipo:   se guarda en la columna 'ubicacion' de la tabla real.
+                    (el parámetro se sigue llamando 'tipo' para no romper
+                    bodegas_view.py, que ya te llama con tipo=tipo)
         """
         print(f"--- Creando bodega: {nombre} ({tipo}) ---")
         try:
-            nueva_bodega = {"nombre": nombre, "tipo": tipo}
+            bodega = run_query(
+                """
+                INSERT INTO bodegas (nombre, ubicacion)
+                VALUES (%s, %s)
+                RETURNING *
+                """,
+                (nombre, tipo),
+                fetch_one=True,
+            )
 
-            res = supabase.table("bodegas").insert(nueva_bodega).execute()
-
-            if not res.data:
+            if not bodega:
                 return {"success": False, "message": "No se pudo crear la bodega"}
 
             print(f"✅ Bodega '{nombre}' creada con éxito")
             return {
                 "success": True,
                 "message": f"Bodega '{nombre}' creada con éxito",
-                "data": res.data[0],
+                "data": bodega,
             }
 
         except Exception as e:
@@ -111,16 +125,18 @@ class BodegasService:
         """
         print(f"--- Actualizando bodega id: {bodega_id} ---")
         try:
-            datos_actualizados = {"nombre": nombre, "tipo": tipo}
-
-            res = (
-                supabase.table("bodegas")
-                .update(datos_actualizados)
-                .eq("id", bodega_id)
-                .execute()
+            bodega = run_query(
+                """
+                UPDATE bodegas
+                SET nombre = %s, ubicacion = %s
+                WHERE id = %s
+                RETURNING *
+                """,
+                (nombre, tipo, bodega_id),
+                fetch_one=True,
             )
 
-            if not res.data:
+            if not bodega:
                 return {
                     "success": False,
                     "message": "Bodega no encontrada para actualizar",
@@ -130,7 +146,7 @@ class BodegasService:
             return {
                 "success": True,
                 "message": "Bodega actualizada con éxito",
-                "data": res.data[0],
+                "data": bodega,
             }
 
         except Exception as e:
@@ -151,9 +167,13 @@ class BodegasService:
         """
         print(f"--- Eliminando bodega id: {bodega_id} ---")
         try:
-            res = supabase.table("bodegas").delete().eq("id", bodega_id).execute()
+            eliminado = run_query(
+                "DELETE FROM bodegas WHERE id = %s RETURNING id",
+                (bodega_id,),
+                fetch_one=True,
+            )
 
-            if not res.data:
+            if not eliminado:
                 return {
                     "success": False,
                     "message": "Bodega no encontrada para eliminar",
