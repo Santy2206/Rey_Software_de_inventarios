@@ -90,3 +90,11 @@ class AuthService:
                 "success": False,
                 "message": f"Error: {error_msg}",
             }
+
+
+def get_usuario_id():
+    """
+    Función temporal para simular la sesión de un usuario.
+    Devuelve un ID por defecto para que la interfaz no falle.
+    """
+    return "admin-123"
