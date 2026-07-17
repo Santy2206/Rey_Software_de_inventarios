@@ -19,7 +19,7 @@ from datetime import datetime
 from src.services.movimientos_service import MovimientosService
 from src.services.bodegas_service import BodegasService
 from src.services.productos_service import ProductosService
-from src.core.session import get_usuario_id
+from src.services.auth_service import get_usuario_id
 
 _COLOR_TIPO = {
     "Entrada": ("#DCFCE7", "#15803D"),

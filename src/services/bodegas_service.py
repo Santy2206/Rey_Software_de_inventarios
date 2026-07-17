@@ -334,10 +334,10 @@ def accion():
     # diccionario donde pueda relacionar todas las funciones
 
 
-bitacora = {
-    "fechita": fecha_hora(),  # VARABLE TEMPORAL Q RELACIONA EL DICCIONARIO
-    "objet": usuarios(),
-    "descrip": DESCRIPCION(),
-    "aci": accion(),
-}
-print(bitacora)
+# bitacora = {
+#     "fechita": fecha_hora(),  # VARABLE TEMPORAL Q RELACIONA EL DICCIONARIO
+#     "objet": usuarios(),
+#     "descrip": DESCRIPCION(),
+#     "aci": accion(),
+# }
+# print(bitacora)
