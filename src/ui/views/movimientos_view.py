@@ -194,86 +194,55 @@ class _MovimientosView(ft.Container):
     # FORMULARIO
     # ============================================================
 
-    def form_section(self):
-
+   def form_section(self):
+        # 1. Creamos el control Tabs vacío
         self.tipo = ft.Tabs(
-            selected_index=0,
-            animation_duration=300,
-            on_change=self.actualizar_tipo,
-            tabs=[
-                ft.Tab(text="Entrada", icon=ft.Icons.DOWNLOAD),
-                ft.Tab(text="Salida", icon=ft.Icons.UPLOAD),
-                ft.Tab(text="Baja", icon=ft.Icons.DELETE),
-            ],
+        selected_index=0,
+        animation_duration=300,
+        on_change=self.actualizar_tipo,
+        expand=True
         )
 
-        self.bodega = ft.Dropdown(
-            label="Bodega *",
-            expand=True,
-            options=[],
-        )
+        # 2. Creamos los objetos Tab
+        tab_entrada = ft.Tab()
+        tab_entrada.icon = ft.Icons.DOWNLOAD
+        tab_entrada.content = ft.Text("Entrada")
 
-        self.producto = ft.Dropdown(
-            label="Producto *",
-            expand=True,
-            options=[],
-        )
+        tab_salida = ft.Tab()
+        tab_salida.icon = ft.Icons.UPLOAD
+        tab_salida.content = ft.Text("Salida")
 
-        self.cantidad = ft.TextField(
-            label="Cantidad *",
-            expand=True,
-        )
+        # 3. Agregamos las pestañas al control ya existente
+        self.tipo.tabs.append(tab_entrada)
+        self.tipo.tabs.append(tab_salida)
 
+        # 4. Definir el resto de los controles
+        self.bodega = ft.Dropdown(label="Bodega *", expand=True, options=[])
+        self.producto = ft.Dropdown(label="Producto *", expand=True, options=[])
+        self.cantidad = ft.TextField(label="Cantidad *", expand=True)
         self.fecha = ft.TextField(
-            label="Fecha",
-            value=datetime.now().strftime("%d/%m/%Y"),
-            read_only=True,
-            expand=True,
+        label="Fecha",
+        value=datetime.now().strftime("%d/%m/%Y"),
+        read_only=True,
+        expand=True,
         )
-
-        self.notas = ft.TextField(
-            label="Notas",
-            multiline=True,
-            min_lines=3,
-            max_lines=3,
-        )
+        self.notas = ft.TextField(label="Notas", multiline=True, min_lines=3, max_lines=3)
 
         return ft.Container(
-            bgcolor="white",
-            border_radius=15,
-            padding=20,
-            shadow=ft.BoxShadow(
-                spread_radius=1,
-                blur_radius=8,
-                color=ft.Colors.BLACK12,
-            ),
-            content=ft.Column(
-                spacing=20,
-                controls=[
-                    self.tipo,
-                    ft.Row(
-                        spacing=15,
-                        controls=[
-                            self.bodega,
-                            self.producto,
-                        ],
-                    ),
-                    ft.Row(
-                        spacing=15,
-                        controls=[
-                            self.cantidad,
-                            self.fecha,
-                        ],
-                    ),
-                    self.notas,
-                    ft.Row(
-                        alignment=ft.MainAxisAlignment.END,
-                        controls=[self.crear_boton()],
-                    ),
-                ],
-            ),
+        bgcolor="white",
+        border_radius=15,
+        padding=20,
+        content=ft.Column(
+            spacing=20,
+            controls=[
+                self.tipo,
+                ft.Row(spacing=15, controls=[self.bodega, self.producto]),
+                ft.Row(spacing=15, controls=[self.cantidad, self.fecha]),
+                self.notas,
+                ft.Row(alignment=ft.MainAxisAlignment.END, controls=[self.crear_boton()]),
+            ],
+        ),
         )
-
     def crear_boton(self):
         self.boton_registrar = ft.ElevatedButton(
             "Registrar Entrada",

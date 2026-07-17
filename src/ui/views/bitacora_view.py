@@ -1,157 +1,356 @@
-from src.core.local_db import run_query
+"""
+Vista de Bitácora.
+
+Muestra el historial de acciones del sistema, cargado en vivo desde
+BitacoraService (tabla 'bitacora'), con búsqueda por usuario y filtro
+por tipo de acción.
+
+Sigue el mismo patrón que bodegas_view.py / productos_view.py:
+  - Función pública BitacoraView() que envuelve la clase privada.
+  - Clase _BitacoraView hereda de ft.Container.
+  - La carga de datos corre en un hilo de fondo (threading), disparada
+    desde did_mount().
+"""
+
+import threading
+import flet as ft
+
+from src.services.bitacora_service import BitacoraService
+
+_COLORES_ACCION = {
+    "LOGIN": ("#DBEAFE", "#1D4ED8"),
+    "ENTRADA": ("#DCFCE7", "#15803D"),
+    "SALIDA": ("#FEE2E2", "#B91C1C"),
+    "BAJA": ("#FEF3C7", "#B45309"),
+    "MOVIMIENTO": ("#DBEAFE", "#1D4ED8"),
+    "PRODUCTO": ("#EDE9FE", "#6D28D9"),
+    "BODEGA": ("#FCE7F3", "#BE185D"),
+}
 
 
-class BodegasService:
+def BitacoraView():
+    return ft.Column(controls=[_BitacoraView()])
 
-    @staticmethod
-    def get_all():
-        """Trae todas las bodegas de la base de datos."""
-        print("--- Trayendo todas las bodegas ---")
-        try:
-            # 'ubicacion AS tipo' — bodegas_view.py espera la llave "tipo"
-            data = run_query(
-                "SELECT id, nombre, ubicacion AS tipo, creado_en "
-                "FROM bodegas ORDER BY nombre"
-            )
 
-            if not data:
-                print(" No hay bodegas registradas aún")
-                return {"success": False, "message": "No hay bodegas registradas"}
+class _BitacoraView(ft.Container):
 
-            print(f" Se encontraron {len(data)} bodega(s)")
-            return {"success": True, "message": "Bodegas obtenidas", "data": data}
+    def __init__(self):
+        super().__init__()
 
-        except Exception as e:
-            error_msg = str(e)
-            print(f" Error en BodegasService.get_all: {error_msg}")
-            return {
-                "success": False,
-                "message": f"Error al obtener bodegas: {error_msg}",
-            }
+        self.expand = True
+        self.bgcolor = "#f5f6fa"
+        self.padding = 20
 
-    @staticmethod
-    def get_one(bodega_id: str):
-        """
-        Trae una sola bodega por su ID.
-        """
-        print(f"--- Buscando bodega con id: {bodega_id} ---")
-        try:
-            bodega = run_query(
-                "SELECT id, nombre, ubicacion AS tipo, creado_en "
-                "FROM bodegas WHERE id = %s",
-                (bodega_id,),
-                fetch_one=True,
-            )
+        self._registros: list[dict] = []
 
-            if not bodega:
-                print(f"Bodega con id {bodega_id} no encontrada")
-                return {"success": False, "message": "Bodega no encontrada"}
+        self.content = ft.Column(
+            expand=True,
+            spacing=0,
+            controls=[
+                self.header_section(),
+                ft.Container(height=20),
+                self.tabla_section(),
+            ],
+        )
 
-            print(f"Bodega encontrada: {bodega['nombre']}")
-            return {"success": True, "message": "Bodega encontrada", "data": bodega}
+    # ── Lifecycle ───────────────────────────────────────────────────────
+    def did_mount(self):
+        threading.Thread(target=self._cargar_bitacora, daemon=True).start()
 
-        except Exception as e:
-            error_msg = str(e)
-            print(f"Error en BodegasService.get_one: {error_msg}")
-            return {"success": False, "message": f"Error al buscar bodega: {error_msg}"}
+    def _cargar_bitacora(self):
+        resultado = BitacoraService.get_all()
+        self._registros = resultado["data"] if resultado["success"] else []
+        self._refrescar_tabla()
+        self.page.update()
 
-    @staticmethod
-    def create(nombre: str, tipo: str):
-        """
-        Crea una nueva bodega.
-        """
-        print(f"--- Creando bodega: {nombre} ({tipo}) ---")
-        try:
-            bodega = run_query(
-                """
-                INSERT INTO bodegas (nombre, ubicacion)
-                VALUES (%s, %s)
-                RETURNING *
-                """,
-                (nombre, tipo),
-                fetch_one=True,
-            )
+    # ======================================================
+    # HEADER
+    # ======================================================
 
-            if not bodega:
-                return {"success": False, "message": "No se pudo crear la bodega"}
+    def header_section(self):
 
-            print(f"Bodega '{nombre}' creada con éxito")
-            return {
-                "success": True,
-                "message": f"Bodega '{nombre}' creada con éxito",
-                "data": bodega,
-            }
+        return ft.Row(
+            alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+            controls=[
+                ft.Column(
+                    spacing=2,
+                    controls=[
+                        ft.Text(
+                            "Bitácora",
+                            size=24,
+                            weight=ft.FontWeight.BOLD,
+                            color="#222",
+                        ),
+                        ft.Text(
+                            "Registro de actividades del sistema",
+                            size=12,
+                            color="grey",
+                        ),
+                    ],
+                ),
+                ft.Row(
+                    spacing=10,
+                    controls=[
+                        ft.Container(
+                            bgcolor="#E8FFF0",
+                            border_radius=20,
+                            padding=ft.padding.symmetric(
+                                horizontal=12,
+                                vertical=8,
+                            ),
+                            content=ft.Row(
+                                spacing=5,
+                                controls=[
+                                    ft.Icon(
+                                        ft.Icons.CHECK_CIRCLE,
+                                        color="green",
+                                        size=16,
+                                    ),
+                                    ft.Text(
+                                        "Online (Sincronizado)",
+                                        color="green",
+                                        size=12,
+                                        weight=ft.FontWeight.BOLD,
+                                    ),
+                                ],
+                            ),
+                        ),
+                        ft.Container(
+                            bgcolor="white",
+                            border_radius=15,
+                            padding=10,
+                            shadow=ft.BoxShadow(
+                                spread_radius=1,
+                                blur_radius=8,
+                                color=ft.Colors.BLACK12,
+                            ),
+                            content=ft.Row(
+                                spacing=10,
+                                controls=[
+                                    ft.CircleAvatar(
+                                        bgcolor="#b3001b",
+                                        content=ft.Text(
+                                            "A",
+                                            color="white",
+                                        ),
+                                    ),
+                                    ft.Column(
+                                        spacing=0,
+                                        controls=[
+                                            ft.Text(
+                                                "admin",
+                                                weight=ft.FontWeight.BOLD,
+                                            ),
+                                            ft.Text(
+                                                "Administrador",
+                                                size=11,
+                                                color="grey",
+                                            ),
+                                        ],
+                                    ),
+                                ],
+                            ),
+                        ),
+                    ],
+                ),
+            ],
+        )
 
-        except Exception as e:
-            error_msg = str(e)
-            print(f"Error en BodegasService.create: {error_msg}")
-            return {"success": False, "message": f"Error al crear bodega: {error_msg}"}
+    # ======================================================
+    # TABLA
+    # ======================================================
 
-    @staticmethod
-    def update(bodega_id: str, nombre: str, tipo: str):
-        """
-        Actualiza el nombre y/o tipo de una bodega existente.
-        """
-        print(f"--- Actualizando bodega id: {bodega_id} ---")
-        try:
-            bodega = run_query(
-                """
-                UPDATE bodegas
-                SET nombre = %s, ubicacion = %s
-                WHERE id = %s
-                RETURNING *
-                """,
-                (nombre, tipo, bodega_id),
-                fetch_one=True,
-            )
+    def tabla_section(self):
 
-            if not bodega:
-                return {
-                    "success": False,
-                    "message": "Bodega no encontrada para actualizar",
-                }
+        self.buscar = ft.TextField(
+            expand=True,
+            hint_text="Buscar por usuario...",
+            prefix_icon=ft.Icons.SEARCH,
+            on_change=self._aplicar_filtros,
+        )
 
-            print(f" Bodega actualizada con éxito")
-            return {
-                "success": True,
-                "message": "Bodega actualizada con éxito",
-                "data": bodega,
-            }
+        # 1. Creamos el Dropdown SIN el on_change adentro
+        self.filtro = ft.Dropdown(
+            width=180,
+            label="Acción",
+            value="Todas",
+            options=[
+                ft.DropdownOption("Todas"),
+                ft.DropdownOption("LOGIN"),
+                ft.DropdownOption("ENTRADA"),
+                ft.DropdownOption("SALIDA"),
+                ft.DropdownOption("BAJA"),
+                ft.DropdownOption("MOVIMIENTO"),
+                ft.DropdownOption("PRODUCTO"),
+                ft.DropdownOption("BODEGA"),
+            ],
+        )
 
-        except Exception as e:
-            error_msg = str(e)
-            print(f" Error en BodegasService.update: {error_msg}")
-            return {
-                "success": False,
-                "message": f"Error al actualizar bodega: {error_msg}",
-            }
+        # 2. Asignamos la función on_change aquí afuera
+        self.filtro.on_change = self._aplicar_filtros
 
-    @staticmethod
-    def delete(bodega_id: str):
-        """
-        Elimina una bodega por su ID.
-        """
-        print(f"--- Eliminando bodega id: {bodega_id} ---")
-        try:
-            eliminado = run_query(
-                "DELETE FROM bodegas WHERE id = %s RETURNING id",
-                (bodega_id,),
-                fetch_one=True,
-            )
+        self.total = ft.Text(
+            "0 registros",
+            color="#4338CA",
+            weight=ft.FontWeight.BOLD,
+        )
 
-            if not eliminado:
-                return {
-                    "success": False,
-                    "message": "Bodega no encontrada para eliminar",
-                }
+        self.total = ft.Text(
+            "0 registros",
+            color="#4338CA",
+            weight=ft.FontWeight.BOLD,
+        )
 
-            print(f" Bodega eliminada con éxito")
-            return {"success": True, "message": "Bodega eliminada con éxito"}
+        self.tabla = ft.DataTable(
+            expand=True,
+            border=ft.border.all(1, "#eeeeee"),
+            border_radius=10,
+            vertical_lines=ft.BorderSide(1, "#eeeeee"),
+            horizontal_lines=ft.BorderSide(1, "#eeeeee"),
+            heading_row_color="#fafafa",
+            columns=[
+                ft.DataColumn(ft.Text("Fecha / Hora")),
+                ft.DataColumn(ft.Text("Usuario")),
+                ft.DataColumn(ft.Text("Rol")),
+                ft.DataColumn(ft.Text("Acción")),
+                ft.DataColumn(ft.Text("Detalle")),
+            ],
+            rows=[],
+        )
 
-        except Exception as e:
-            error_msg = str(e)
-            print(f" Error en BodegasService.delete: {error_msg}")
-            return {
-                "success": False,
-                "message": f"Error al eliminar bodega: {error_msg}",
-            }
+        return ft.Container(
+            expand=True,
+            bgcolor="white",
+            border_radius=15,
+            padding=20,
+            shadow=ft.BoxShadow(
+                spread_radius=1,
+                blur_radius=8,
+                color=ft.Colors.BLACK12,
+            ),
+            content=ft.Column(
+                expand=True,
+                spacing=20,
+                controls=[
+                    ft.Row(
+                        alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                        controls=[
+                            ft.Column(
+                                spacing=2,
+                                controls=[
+                                    ft.Text(
+                                        "Bitácora del Sistema",
+                                        size=18,
+                                        weight=ft.FontWeight.BOLD,
+                                    ),
+                                    ft.Text(
+                                        "Registro de acciones realizadas",
+                                        size=11,
+                                        color="grey",
+                                    ),
+                                ],
+                            ),
+                            ft.Container(
+                                bgcolor="#EEF2FF",
+                                border_radius=20,
+                                padding=10,
+                                content=ft.Row(
+                                    spacing=5,
+                                    controls=[
+                                        ft.Icon(
+                                            ft.Icons.LIST_ALT,
+                                            color="#4338CA",
+                                            size=16,
+                                        ),
+                                        self.total,
+                                    ],
+                                ),
+                            ),
+                        ],
+                    ),
+                    ft.Row(
+                        spacing=10,
+                        controls=[
+                            self.buscar,
+                            self.filtro,
+                        ],
+                    ),
+                    ft.Divider(),
+                    self.tabla,
+                ],
+            ),
+        )
+
+    # ======================================================
+    # DATOS -> FILAS
+    # ======================================================
+
+    def _refrescar_tabla(self):
+        self.tabla.rows = [self._crear_fila(r) for r in self._registros]
+        self.total.value = f"{len(self.tabla.rows)} registros"
+
+    def _crear_fila(self, registro: dict):
+
+        fecha = registro.get("fecha")
+        fecha_str = (
+            fecha.strftime("%d/%m/%Y %H:%M")
+            if hasattr(fecha, "strftime")
+            else str(fecha or "—")
+        )
+
+        usuario = registro.get("usuario") or "—"
+        rol = (registro.get("rol") or "—").capitalize()
+        accion = registro.get("accion") or "—"
+
+        detalles = registro.get("detalles") or {}
+        descripcion = (
+            detalles.get("descripcion", "")
+            if isinstance(detalles, dict)
+            else str(detalles)
+        )
+
+        fondo, texto = _COLORES_ACCION.get(accion, ("#F3F4F6", "#374151"))
+
+        return ft.DataRow(
+            cells=[
+                ft.DataCell(ft.Text(fecha_str)),
+                ft.DataCell(ft.Text(usuario)),
+                ft.DataCell(ft.Text(rol)),
+                ft.DataCell(
+                    ft.Container(
+                        bgcolor=fondo,
+                        border_radius=20,
+                        padding=6,
+                        alignment=ft.Alignment(0, 0),
+                        content=ft.Text(
+                            accion,
+                            color=texto,
+                            weight=ft.FontWeight.BOLD,
+                            size=11,
+                        ),
+                    )
+                ),
+                ft.DataCell(ft.Text(descripcion)),
+            ],
+        )
+
+    # ======================================================
+    # FILTROS (búsqueda + acción, combinados)
+    # ======================================================
+
+    def _aplicar_filtros(self, e=None):
+
+        texto = (self.buscar.value or "").lower()
+        accion_sel = self.filtro.value
+
+        for fila in self.tabla.rows:
+            usuario = fila.cells[1].content.value.lower()
+            accion_fila = fila.cells[3].content.content.value
+
+            visible = texto in usuario
+            if accion_sel and accion_sel != "Todas":
+                visible = visible and accion_fila == accion_sel
+
+            fila.visible = visible
+
+        self.update()
