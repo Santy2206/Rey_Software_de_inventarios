@@ -1,7 +1,38 @@
+"""
+Vista de Bitácora.
+
+Muestra el historial de acciones del sistema, cargado en vivo desde
+BitacoraService (tabla 'bitacora'), con búsqueda por usuario y filtro
+por tipo de acción.
+
+Sigue el mismo patrón que bodegas_view.py / productos_view.py:
+  - Función pública BitacoraView() que envuelve la clase privada.
+  - Clase _BitacoraView hereda de ft.Container.
+  - La carga de datos corre en un hilo de fondo (threading), disparada
+    desde did_mount().
+"""
+
+import threading
 import flet as ft
 
+from src.services.bitacora_service import BitacoraService
 
-class BitacoraView(ft.Container):
+_COLORES_ACCION = {
+    "LOGIN": ("#DBEAFE", "#1D4ED8"),
+    "ENTRADA": ("#DCFCE7", "#15803D"),
+    "SALIDA": ("#FEE2E2", "#B91C1C"),
+    "BAJA": ("#FEF3C7", "#B45309"),
+    "MOVIMIENTO": ("#DBEAFE", "#1D4ED8"),
+    "PRODUCTO": ("#EDE9FE", "#6D28D9"),
+    "BODEGA": ("#FCE7F3", "#BE185D"),
+}
+
+
+def BitacoraView():
+    return ft.Column(controls=[_BitacoraView()])
+
+
+class _BitacoraView(ft.Container):
 
     def __init__(self):
         super().__init__()
@@ -9,6 +40,8 @@ class BitacoraView(ft.Container):
         self.expand = True
         self.bgcolor = "#f5f6fa"
         self.padding = 20
+
+        self._registros: list[dict] = []
 
         self.content = ft.Column(
             expand=True,
@@ -19,6 +52,16 @@ class BitacoraView(ft.Container):
                 self.tabla_section(),
             ],
         )
+
+    # ── Lifecycle ───────────────────────────────────────────────────────
+    def did_mount(self):
+        threading.Thread(target=self._cargar_bitacora, daemon=True).start()
+
+    def _cargar_bitacora(self):
+        resultado = BitacoraService.get_all()
+        self._registros = resultado["data"] if resultado["success"] else []
+        self._refrescar_tabla()
+        self.page.update()
 
     # ======================================================
     # HEADER
@@ -112,8 +155,8 @@ class BitacoraView(ft.Container):
                 ),
             ],
         )
-        # ======================================================
 
+    # ======================================================
     # TABLA
     # ======================================================
 
@@ -123,27 +166,28 @@ class BitacoraView(ft.Container):
             expand=True,
             hint_text="Buscar por usuario...",
             prefix_icon=ft.Icons.SEARCH,
-            on_change=self.buscar_usuario,
+            on_change=self._aplicar_filtros,
         )
 
         self.filtro = ft.Dropdown(
-            on_change=self.filtrar_accion,
+            on_change=self._aplicar_filtros,
             width=180,
             label="Acción",
             value="Todas",
             options=[
-                ft.dropdown.Option("Todas"),
-                ft.dropdown.Option("LOGIN"),
-                ft.dropdown.Option("ENTRADA"),
-                ft.dropdown.Option("SALIDA"),
-                ft.dropdown.Option("BAJA"),
-                ft.dropdown.Option("PRODUCTO"),
-                ft.dropdown.Option("BODEGA"),
+                ft.DropdownOption("Todas"),
+                ft.DropdownOption("LOGIN"),
+                ft.DropdownOption("ENTRADA"),
+                ft.DropdownOption("SALIDA"),
+                ft.DropdownOption("BAJA"),
+                ft.DropdownOption("MOVIMIENTO"),
+                ft.DropdownOption("PRODUCTO"),
+                ft.DropdownOption("BODEGA"),
             ],
         )
 
         self.total = ft.Text(
-            "8 registros",
+            "0 registros",
             color="#4338CA",
             weight=ft.FontWeight.BOLD,
         )
@@ -152,14 +196,8 @@ class BitacoraView(ft.Container):
             expand=True,
             border=ft.border.all(1, "#eeeeee"),
             border_radius=10,
-            vertical_lines=ft.BorderSide(
-                1,
-                "#eeeeee",
-            ),
-            horizontal_lines=ft.BorderSide(
-                1,
-                "#eeeeee",
-            ),
+            vertical_lines=ft.BorderSide(1, "#eeeeee"),
+            horizontal_lines=ft.BorderSide(1, "#eeeeee"),
             heading_row_color="#fafafa",
             columns=[
                 ft.DataColumn(ft.Text("Fecha / Hora")),
@@ -168,50 +206,7 @@ class BitacoraView(ft.Container):
                 ft.DataColumn(ft.Text("Acción")),
                 ft.DataColumn(ft.Text("Detalle")),
             ],
-            rows=[
-                self.crear_fila(
-                    "24/03/2026 08:10",
-                    "admin",
-                    "Administrador",
-                    "LOGIN",
-                    "Inicio de sesión",
-                ),
-                self.crear_fila(
-                    "24/03/2026 08:20",
-                    "admin",
-                    "Administrador",
-                    "ENTRADA",
-                    "Ingresó 120 unidades de Perfume Rey",
-                ),
-                self.crear_fila(
-                    "24/03/2026 09:15",
-                    "admin",
-                    "Administrador",
-                    "SALIDA",
-                    "Salida de 15 unidades",
-                ),
-                self.crear_fila(
-                    "24/03/2026 09:45",
-                    "admin",
-                    "Administrador",
-                    "BAJA",
-                    "Producto vencido",
-                ),
-                self.crear_fila(
-                    "24/03/2026 10:00",
-                    "admin",
-                    "Administrador",
-                    "PRODUCTO",
-                    "Creó nuevo producto",
-                ),
-                self.crear_fila(
-                    "24/03/2026 10:30",
-                    "admin",
-                    "Administrador",
-                    "BODEGA",
-                    "Creó bodega Fragancias",
-                ),
-            ],
+            rows=[],
         )
 
         return ft.Container(
@@ -276,27 +271,40 @@ class BitacoraView(ft.Container):
                 ],
             ),
         )
-        # ======================================================
 
-    # CREAR FILA
+    # ======================================================
+    # DATOS -> FILAS
     # ======================================================
 
-    def crear_fila(self, fecha, usuario, rol, accion, detalle):
+    def _refrescar_tabla(self):
+        self.tabla.rows = [self._crear_fila(r) for r in self._registros]
+        self.total.value = f"{len(self.tabla.rows)} registros"
 
-        colores = {
-            "LOGIN": ("#DBEAFE", "#1D4ED8"),
-            "ENTRADA": ("#DCFCE7", "#15803D"),
-            "SALIDA": ("#FEE2E2", "#B91C1C"),
-            "BAJA": ("#FEF3C7", "#B45309"),
-            "PRODUCTO": ("#EDE9FE", "#6D28D9"),
-            "BODEGA": ("#FCE7F3", "#BE185D"),
-        }
+    def _crear_fila(self, registro: dict):
 
-        fondo, texto = colores.get(accion, ("#F3F4F6", "#374151"))
+        fecha = registro.get("fecha")
+        fecha_str = (
+            fecha.strftime("%d/%m/%Y %H:%M")
+            if hasattr(fecha, "strftime")
+            else str(fecha or "—")
+        )
+
+        usuario = registro.get("usuario") or "—"
+        rol = (registro.get("rol") or "—").capitalize()
+        accion = registro.get("accion") or "—"
+
+        detalles = registro.get("detalles") or {}
+        descripcion = (
+            detalles.get("descripcion", "")
+            if isinstance(detalles, dict)
+            else str(detalles)
+        )
+
+        fondo, texto = _COLORES_ACCION.get(accion, ("#F3F4F6", "#374151"))
 
         return ft.DataRow(
             cells=[
-                ft.DataCell(ft.Text(fecha)),
+                ft.DataCell(ft.Text(fecha_str)),
                 ft.DataCell(ft.Text(usuario)),
                 ft.DataCell(ft.Text(rol)),
                 ft.DataCell(
@@ -304,7 +312,7 @@ class BitacoraView(ft.Container):
                         bgcolor=fondo,
                         border_radius=20,
                         padding=6,
-                        alignment=ft.alignment.center,
+                        alignment=ft.Alignment(0, 0),
                         content=ft.Text(
                             accion,
                             color=texto,
@@ -313,41 +321,27 @@ class BitacoraView(ft.Container):
                         ),
                     )
                 ),
-                ft.DataCell(ft.Text(detalle)),
+                ft.DataCell(ft.Text(descripcion)),
             ],
         )
 
     # ======================================================
-    # BUSCAR
+    # FILTROS (búsqueda + acción, combinados)
     # ======================================================
 
-    def buscar_usuario(self, e):
+    def _aplicar_filtros(self, e=None):
 
-        texto = self.buscar.value.lower()
+        texto = (self.buscar.value or "").lower()
+        accion_sel = self.filtro.value
 
         for fila in self.tabla.rows:
-
             usuario = fila.cells[1].content.value.lower()
+            accion_fila = fila.cells[3].content.content.value
 
-            fila.visible = texto in usuario
+            visible = texto in usuario
+            if accion_sel and accion_sel != "Todas":
+                visible = visible and accion_fila == accion_sel
 
-        self.update()
-
-    # ======================================================
-    # FILTRAR
-    # ======================================================
-
-    def filtrar_accion(self, e):
-
-        accion = self.filtro.value
-
-        for fila in self.tabla.rows:
-
-            valor = fila.cells[3].content.content.value
-
-            if accion == "Todas":
-                fila.visible = True
-            else:
-                fila.visible = valor == accion
+            fila.visible = visible
 
         self.update()
