@@ -31,16 +31,16 @@ class BodegasService:
                 "FROM bodegas ORDER BY nombre"
             )
 
-            if not data:
-                print("⚠️ No hay bodegas registradas aún")
+            if not res.data:
+                print(" No hay bodegas registradas aún")
                 return {"success": False, "message": "No hay bodegas registradas"}
 
-            print(f"✅ Se encontraron {len(data)} bodega(s)")
-            return {"success": True, "message": "Bodegas obtenidas", "data": data}
+            print(f" Se encontraron {len(res.data)} bodega(s)")
+            return {"success": True, "message": "Bodegas obtenidas", "data": res.data}
 
         except Exception as e:
             error_msg = str(e)
-            print(f"🔥 Error en BodegasService.get_all: {error_msg}")
+            print(f" Error en BodegasService.get_all: {error_msg}")
             return {
                 "success": False,
                 "message": f"Error al obtener bodegas: {error_msg}",
@@ -63,16 +63,16 @@ class BodegasService:
                 fetch_one=True,
             )
 
-            if not bodega:
-                print(f"⚠️ Bodega con id {bodega_id} no encontrada")
+            if not res.data:
+                print(f"Bodega con id {bodega_id} no encontrada")
                 return {"success": False, "message": "Bodega no encontrada"}
 
-            print(f"✅ Bodega encontrada: {bodega['nombre']}")
-            return {"success": True, "message": "Bodega encontrada", "data": bodega}
+            print(f"Bodega encontrada: {res.data['nombre']}")
+            return {"success": True, "message": "Bodega encontrada", "data": res.data}
 
         except Exception as e:
             error_msg = str(e)
-            print(f"🔥 Error en BodegasService.get_one: {error_msg}")
+            print(f"Error en BodegasService.get_one: {error_msg}")
             return {"success": False, "message": f"Error al buscar bodega: {error_msg}"}
 
     @staticmethod
@@ -101,7 +101,7 @@ class BodegasService:
             if not bodega:
                 return {"success": False, "message": "No se pudo crear la bodega"}
 
-            print(f"✅ Bodega '{nombre}' creada con éxito")
+            print(f"Bodega '{nombre}' creada con éxito")
             return {
                 "success": True,
                 "message": f"Bodega '{nombre}' creada con éxito",
@@ -110,7 +110,7 @@ class BodegasService:
 
         except Exception as e:
             error_msg = str(e)
-            print(f"🔥 Error en BodegasService.create: {error_msg}")
+            print(f"Error en BodegasService.create: {error_msg}")
             return {"success": False, "message": f"Error al crear bodega: {error_msg}"}
 
     @staticmethod
@@ -142,7 +142,7 @@ class BodegasService:
                     "message": "Bodega no encontrada para actualizar",
                 }
 
-            print(f"✅ Bodega actualizada con éxito")
+            print(f" Bodega actualizada con éxito")
             return {
                 "success": True,
                 "message": "Bodega actualizada con éxito",
@@ -151,7 +151,7 @@ class BodegasService:
 
         except Exception as e:
             error_msg = str(e)
-            print(f"🔥 Error en BodegasService.update: {error_msg}")
+            print(f" Error en BodegasService.update: {error_msg}")
             return {
                 "success": False,
                 "message": f"Error al actualizar bodega: {error_msg}",
@@ -179,13 +179,165 @@ class BodegasService:
                     "message": "Bodega no encontrada para eliminar",
                 }
 
-            print(f"✅ Bodega eliminada con éxito")
+            print(f" Bodega eliminada con éxito")
             return {"success": True, "message": "Bodega eliminada con éxito"}
 
         except Exception as e:
             error_msg = str(e)
-            print(f"🔥 Error en BodegasService.delete: {error_msg}")
+            print(f" Error en BodegasService.delete: {error_msg}")
             return {
                 "success": False,
                 "message": f"Error al eliminar bodega: {error_msg}",
             }
+
+
+# crear un diccionario que contenga [fecha ,hora ], [usuario ],[rol] ,[accion ] y [descripcion ]
+# array de las horas
+fecha_hora = []
+hora = []
+# array de las horas
+usuarios_nuevos = []
+contraeña_nueva = []
+# roles
+administrador = []
+# acciones
+ventas = []
+clientes = []
+bodegas = []
+# //////////////////////
+DESCRIPCION = []
+
+
+# funcionespara cada uno y despues poner en un diccionario
+def DESCRIPCION():
+    while True:
+        try:
+            descrip = str(input("Señor usuario:anexe una descripcion breve "))
+            DESCRIPCION.append(descrip)
+            print("señor usuaio la descripcion fue guardada exitosamente")
+            break
+        except ValueError:
+            print(
+                "Sñor usuario su descripcion no cumple con los parametros establecidos"
+            )
+
+
+def usuarios():
+    print("ingrese la opcion deseada")
+    print("1 usuarios registrados")
+    print("2 registrar usuario")
+    opcion = int(input("ingrese la opcion deseada"))
+    while True:
+        try:
+            if opcion == 1:
+                while True:
+                    nuevo_usuarios = str(input("ingrese el nuevo usuario"))
+                    usuarios_nuevos.append(nuevo_usuarios)
+                    contraseña = input("ingrese una contraseña alfanumerica")
+                    if contraseña.isalnum():
+                        contraeña_nueva.append(contraseña)
+                        print("¡Contraseña alfanumérica registrada con éxito!")
+                    else:
+                        break
+                        print(
+                            "la contraseña no es alphanumerica vuelva a intentarlo nuevamente"
+                        )
+            elif opcion == 2:
+                for usuarios_nuevos in nuevo_usuarios:
+                    print("////usuarios registrados////")
+                    print("=", usuarios_nuevos)
+                    break
+        except ValueError:
+            print("no existe la opcion deseada")
+
+
+from datetime import datetime
+
+
+def fecha_hora():
+    while True:
+        fecha_input = input("Ingrese la fecha (DD/MM/AAAA): ")
+        try:
+            fecha_validada = datetime.strptime(fecha_input, "%d/%m/%Y").date()
+            fecha_hora = fecha_validada.strftime("%d/%m/%Y")
+            break
+        except ValueError:
+            print(" Fecha incorrecta. Use el formato Día/Mes/Año.")
+
+        while True:
+            hora_input = input("Ingrese la hora (HH:MM): ")
+        try:
+            hora_validada = datetime.strptime(hora_input, "%H:%M").time()
+            hora = hora_validada.strftime("%H:%M")
+            break
+        except ValueError:
+            print(" Hora incorrecta. Use el formato de 24 horas.")
+
+        return [fecha_final, hora_final]
+
+
+def accion():
+
+    print("ingrese la opcion deseada:")
+    print("1 agregar ventas")
+    print("2 historial de ventas")
+    print("3 ingresar clientes")
+    print("4 historial de ventas")
+    print("5 ingresar bodegas")
+    print("6 historial de bodegas")
+    opcion = "ingrese la opcion deseada"
+    while True:
+        try:
+            if opcion == 1:
+                while True:
+                    try:
+                        vent = str("ingrese el producto del cual vendio")
+                        ventas.append(vent)
+                        break
+                    except ValueError:
+                        print("error vuelva a intentarlos")
+            if opcion == 2:
+                for ventas in vent:
+                    print("///////////historial de ventas////////////")
+                    print("=", ventas)
+
+            if opcion == 3:
+                while True:
+                    try:
+                        cly = str(input("ingrese el cliente que va a comprar"))
+                        clientes.appen(cly)
+                        break
+                    except ValueError:
+                        print("error vuelva a intentarlos")
+            if opcion == 4:
+                for clientes in cly:
+                    print("//// Historial////")
+                    print("=", clientes)
+
+            if opcion == 5:
+                while True:
+                    try:
+                        bod = int(
+                            input("ingrese el numero de bodegas que desea ingresar")
+                        )
+                        bodegas.append(bod)
+                        break
+                    except ValueError:
+                        print("el numero de bodegas no es valido")
+            if opcion == 6:
+                for bodegas in bod:
+                    print("///historial////")
+                    print("=", bodegas)
+        except ValueError:
+            print("la opcion no es valida")
+
+    # diccionario donde pueda relacionar todas las funciones
+
+
+bitacora = {
+    "fechita": fecha_hora(),  # VARABLE TEMPORAL Q RELACIONA EL DICCIONARIO
+    "objet": usuarios(),
+    "descrip": DESCRIPCION(),
+    "aci": accion(),
+}
+print(bitacora)

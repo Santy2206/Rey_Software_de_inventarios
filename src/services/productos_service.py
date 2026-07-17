@@ -47,7 +47,7 @@ class ProductosService:
 
         except Exception as e:
             error_msg = str(e)
-            print(f"🔥 Error en ProductosService.get_all: {error_msg}")
+            print(f" Error en ProductosService.get_all: {error_msg}")
             return {
                 "success": False,
                 "message": f"Error al obtener productos: {error_msg}",
@@ -76,7 +76,7 @@ class ProductosService:
 
         except Exception as e:
             error_msg = str(e)
-            print(f"🔥 Error en ProductosService.get_by_bodega: {error_msg}")
+            print(f" Error en ProductosService.get_by_bodega: {error_msg}")
             return {
                 "success": False,
                 "message": f"Error al obtener productos: {error_msg}",
@@ -111,7 +111,7 @@ class ProductosService:
 
         except Exception as e:
             error_msg = str(e)
-            print(f"🔥 Error en ProductosService.get_one: {error_msg}")
+            print(f" Error en ProductosService.get_one: {error_msg}")
             return {
                 "success": False,
                 "message": f"Error al buscar producto: {error_msg}",
@@ -153,7 +153,7 @@ class ProductosService:
             if not producto:
                 return {"success": False, "message": "No se pudo crear el producto"}
 
-            print(f"✅ Producto '{nombre}' creado con éxito")
+            print(f" Producto '{nombre}' creado con éxito")
             return {
                 "success": True,
                 "message": f"Producto '{nombre}' creado con éxito",
@@ -162,7 +162,7 @@ class ProductosService:
 
         except Exception as e:
             error_msg = str(e)
-            print(f"🔥 Error en ProductosService.create: {error_msg}")
+            print(f" Error en ProductosService.create: {error_msg}")
             return {
                 "success": False,
                 "message": f"Error al crear producto: {error_msg}",
@@ -213,7 +213,7 @@ class ProductosService:
                     "message": "Producto no encontrado para actualizar",
                 }
 
-            print(f"✅ Producto actualizado con éxito")
+            print(f" Producto actualizado con éxito")
             return {
                 "success": True,
                 "message": "Producto actualizado con éxito",
@@ -222,7 +222,7 @@ class ProductosService:
 
         except Exception as e:
             error_msg = str(e)
-            print(f"🔥 Error en ProductosService.update: {error_msg}")
+            print(f" Error en ProductosService.update: {error_msg}")
             return {
                 "success": False,
                 "message": f"Error al actualizar producto: {error_msg}",
@@ -250,12 +250,12 @@ class ProductosService:
                     "message": "Producto no encontrado para eliminar",
                 }
 
-            print(f"✅ Producto eliminado con éxito")
+            print(f" Producto eliminado con éxito")
             return {"success": True, "message": "Producto eliminado con éxito"}
 
         except Exception as e:
             error_msg = str(e)
-            print(f"🔥 Error en ProductosService.delete: {error_msg}")
+            print(f" Error en ProductosService.delete: {error_msg}")
             return {
                 "success": False,
                 "message": f"Error al eliminar producto: {error_msg}",

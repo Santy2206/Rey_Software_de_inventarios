@@ -132,7 +132,7 @@ class _BodegasView(ft.Container):
 
         self._refrescar_cards()  # reconstruye las tarjetas
         self._actualizar_stats()  # actualiza contadores
-        self.page.update()  # UN solo update al final ✅
+        self.page.update()  # UN solo update al final 
 
     # ─────────────────────────────────────────────────────────────────────────
     # Construcción de tarjetas dinámicas
@@ -281,7 +281,7 @@ class _BodegasView(ft.Container):
                                 style=ft.ButtonStyle(
                                     shape=ft.RoundedRectangleBorder(radius=8)
                                 ),
-                                # ✅ b=bodega captura el valor correcto en el closure
+                                #  b=bodega captura el valor correcto en el closure
                                 on_click=lambda e, b=bodega: self._abrir_dialogo_editar(
                                     b
                                 ),

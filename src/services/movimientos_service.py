@@ -42,7 +42,7 @@ class MovimientosService:
             if not res.data:
                 return {"success": False, "message": "No hay movimientos registrados"}
 
-            print(f"✅ Se encontraron {len(res.data)} movimiento(s)")
+            print(f" Se encontraron {len(res.data)} movimiento(s)")
             return {
                 "success": True,
                 "message": "Movimientos obtenidos",
@@ -51,7 +51,7 @@ class MovimientosService:
 
         except Exception as e:
             error_msg = str(e)
-            print(f"🔥 Error en MovimientosService.get_all: {error_msg}")
+            print(f" Error en MovimientosService.get_all: {error_msg}")
             return {
                 "success": False,
                 "message": f"Error al obtener movimientos: {error_msg}",
@@ -87,7 +87,7 @@ class MovimientosService:
 
         except Exception as e:
             error_msg = str(e)
-            print(f"🔥 Error en MovimientosService.get_by_producto: {error_msg}")
+            print(f" Error en MovimientosService.get_by_producto: {error_msg}")
             return {
                 "success": False,
                 "message": f"Error al obtener movimientos: {error_msg}",
@@ -155,7 +155,7 @@ class MovimientosService:
         ).execute()
 
         print(
-            f"✅ Movimiento registrado: {tipo} de {cantidad} unidades de '{nombre_producto}'"
+            f" Movimiento registrado: {tipo} de {cantidad} unidades de '{nombre_producto}'"
         )
         print(f"   Stock anterior: {stock_actual} → Stock nuevo: {nuevo_stock}")
 
@@ -187,7 +187,7 @@ class MovimientosService:
             )
         except Exception as e:
             error_msg = str(e)
-            print(f"🔥 Error en registrar_entrada: {error_msg}")
+            print(f" Error en registrar_entrada: {error_msg}")
             return {
                 "success": False,
                 "message": f"Error al registrar entrada: {error_msg}",
@@ -215,7 +215,7 @@ class MovimientosService:
             )
         except Exception as e:
             error_msg = str(e)
-            print(f"🔥 Error en registrar_salida: {error_msg}")
+            print(f" Error en registrar_salida: {error_msg}")
             return {
                 "success": False,
                 "message": f"Error al registrar salida: {error_msg}",
@@ -243,7 +243,7 @@ class MovimientosService:
             )
         except Exception as e:
             error_msg = str(e)
-            print(f"🔥 Error en registrar_ajuste: {error_msg}")
+            print(f" Error en registrar_ajuste: {error_msg}")
             return {
                 "success": False,
                 "message": f"Error al registrar ajuste: {error_msg}",
@@ -271,7 +271,7 @@ class MovimientosService:
             )
         except Exception as e:
             error_msg = str(e)
-            print(f"🔥 Error en registrar_baja: {error_msg}")
+            print(f" Error en registrar_baja: {error_msg}")
             return {
                 "success": False,
                 "message": f"Error al registrar baja: {error_msg}",

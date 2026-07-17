@@ -46,7 +46,7 @@ class AuthService:
                 }
 
             if not res.data or len(res.data) == 0:
-                print("❌ Usuario no encontrado en la tabla 'usuarios'")
+                print(" Usuario no encontrado en la tabla 'usuarios'")
                 return {
                     "success": False,
                     "message": "El nombre de usuario no existe",
@@ -57,7 +57,7 @@ class AuthService:
             user_email = user_data["email"]
             user_role = user_data["rol"]
 
-            print(f"✅ Email encontrado: {user_email}. Autenticando...")
+            print(f" Email encontrado: {user_email}. Autenticando...")
 
             auth_res = supabase.auth.sign_in_with_password(
                 {
@@ -78,7 +78,7 @@ class AuthService:
 
             error_msg = str(e)
 
-            print(f"🔥 Error en AuthService: {error_msg}")
+            print(f" Error en AuthService: {error_msg}")
 
             if "Invalid login credentials" in error_msg:
                 return {
