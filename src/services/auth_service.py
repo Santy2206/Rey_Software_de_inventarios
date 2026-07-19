@@ -46,7 +46,7 @@ class AuthService:
                 }
 
             if not res.data or len(res.data) == 0:
-                print(" Usuario no encontrado en la tabla 'usuarios'")
+                print("❌ Usuario no encontrado en la tabla 'usuarios'")
                 return {
                     "success": False,
                     "message": "El nombre de usuario no existe",
@@ -57,7 +57,7 @@ class AuthService:
             user_email = user_data["email"]
             user_role = user_data["rol"]
 
-            print(f" Email encontrado: {user_email}. Autenticando...")
+            print(f"✅ Email encontrado: {user_email}. Autenticando...")
 
             auth_res = supabase.auth.sign_in_with_password(
                 {
@@ -78,7 +78,7 @@ class AuthService:
 
             error_msg = str(e)
 
-            print(f" Error en AuthService: {error_msg}")
+            print(f"🔥 Error en AuthService: {error_msg}")
 
             if "Invalid login credentials" in error_msg:
                 return {
@@ -91,10 +91,43 @@ class AuthService:
                 "message": f"Error: {error_msg}",
             }
 
+    @staticmethod
+    def get_usuario_id():
+        """
+        Retorna el id del usuario actualmente autenticado en Supabase Auth.
 
-def get_usuario_id():
-    """
-    Función temporal para simular la sesión de un usuario.
-    Devuelve un ID por defecto para que la interfaz no falle.
-    """
-    return "admin-123"
+        Se usa en vistas como movimientos_view.py para saber quién está
+        registrando una acción (ej: usuario_id en un movimiento de inventario).
+
+        ⚠️ IMPORTANTE — verificar contra el esquema:
+        Este id es el UUID de Supabase Auth (auth.users), NO necesariamente
+        el mismo 'id' que usas como llave primaria en tu tabla 'usuarios'.
+        AuthService.login() busca el usuario por 'username' en 'usuarios' pero
+        nunca guarda ese id — solo trae 'email' y 'rol'. Si 'usuarios.id' es
+        una columna independiente (no igual al UUID de auth.users), este
+        método va a devolver un id que no coincide con tu llave foránea en
+        'movimientos.usuario_id', y el insert puede fallar o insertar un id
+        inválido. Antes de usar esto en producción, confirma si 'usuarios.id'
+        está definido igual al UUID de auth.users (patrón común en Supabase)
+        o si es una secuencia/uuid propia.
+
+        Retorna:
+            str | None: el UUID del usuario autenticado, o None si no hay
+            sesión activa o si ocurre un error.
+        """
+        print("--- Buscando id del usuario autenticado ---")
+        try:
+            session = supabase.auth.get_session()
+
+            if not session or not session.user:
+                print("⚠️ No hay sesión activa en Supabase Auth")
+                return None
+
+            usuario_id = session.user.id
+            print(f"✅ Usuario autenticado: {usuario_id}")
+            return usuario_id
+
+        except Exception as e:
+            error_msg = str(e)
+            print(f"🔥 Error en AuthService.get_usuario_id: {error_msg}")
+            return None

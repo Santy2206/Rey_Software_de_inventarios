@@ -19,12 +19,21 @@ from datetime import datetime
 from src.services.movimientos_service import MovimientosService
 from src.services.bodegas_service import BodegasService
 from src.services.productos_service import ProductosService
-from src.services.auth_service import get_usuario_id
+from src.services.auth_service import AuthService
 
 _COLOR_TIPO = {
     "Entrada": ("#DCFCE7", "#15803D"),
     "Salida": ("#FEE2E2", "#B91C1C"),
     "Baja": ("#FEF3C7", "#B45309"),
+    "Ajuste": ("#E0E7FF", "#4338CA"),
+}
+
+# Traduce el 'tipo' crudo que devuelve la BD a la etiqueta que se muestra en la tabla.
+_TIPO_DB_A_LABEL = {
+    "entrada": "Entrada",
+    "salida": "Salida",
+    "baja": "Baja",
+    "ajuste": "Ajuste",
 }
 
 
@@ -128,7 +137,7 @@ class _MovimientosView(ft.Container):
                         ft.Container(
                             bgcolor="#E8FFF0",
                             border_radius=20,
-                            padding=ft.padding.symmetric(
+                            padding=ft.Padding.symmetric(
                                 horizontal=12,
                                 vertical=8,
                             ),
@@ -194,55 +203,53 @@ class _MovimientosView(ft.Container):
     # FORMULARIO
     # ============================================================
 
-   def form_section(self):
-        # 1. Creamos el control Tabs vacío
+    def form_section(self):
         self.tipo = ft.Tabs(
-        selected_index=0,
-        animation_duration=300,
-        on_change=self.actualizar_tipo,
-        expand=True
+            length=3,
+            selected_index=0,
+            animation_duration=300,
+            on_change=self.actualizar_tipo,
+            content=ft.TabBar(
+                tabs=[
+                    ft.Tab(label="Entrada", icon=ft.Icons.DOWNLOAD),
+                    ft.Tab(label="Salida", icon=ft.Icons.UPLOAD),
+                    ft.Tab(label="Baja", icon=ft.Icons.DELETE),
+                ],
+            ),
         )
-
-        # 2. Creamos los objetos Tab
-        tab_entrada = ft.Tab()
-        tab_entrada.icon = ft.Icons.DOWNLOAD
-        tab_entrada.content = ft.Text("Entrada")
-
-        tab_salida = ft.Tab()
-        tab_salida.icon = ft.Icons.UPLOAD
-        tab_salida.content = ft.Text("Salida")
-
-        # 3. Agregamos las pestañas al control ya existente
-        self.tipo.tabs.append(tab_entrada)
-        self.tipo.tabs.append(tab_salida)
-
-        # 4. Definir el resto de los controles
+        # Definir el resto de los controles
         self.bodega = ft.Dropdown(label="Bodega *", expand=True, options=[])
         self.producto = ft.Dropdown(label="Producto *", expand=True, options=[])
         self.cantidad = ft.TextField(label="Cantidad *", expand=True)
         self.fecha = ft.TextField(
-        label="Fecha",
-        value=datetime.now().strftime("%d/%m/%Y"),
-        read_only=True,
-        expand=True,
+            label="Fecha",
+            value=datetime.now().strftime("%d/%m/%Y"),
+            read_only=True,
+            expand=True,
         )
-        self.notas = ft.TextField(label="Notas", multiline=True, min_lines=3, max_lines=3)
+        self.notas = ft.TextField(
+            label="Notas", multiline=True, min_lines=3, max_lines=3
+        )
 
         return ft.Container(
-        bgcolor="white",
-        border_radius=15,
-        padding=20,
-        content=ft.Column(
-            spacing=20,
-            controls=[
-                self.tipo,
-                ft.Row(spacing=15, controls=[self.bodega, self.producto]),
-                ft.Row(spacing=15, controls=[self.cantidad, self.fecha]),
-                self.notas,
-                ft.Row(alignment=ft.MainAxisAlignment.END, controls=[self.crear_boton()]),
-            ],
-        ),
+            bgcolor="white",
+            border_radius=15,
+            padding=20,
+            content=ft.Column(
+                spacing=20,
+                controls=[
+                    self.tipo,
+                    ft.Row(spacing=15, controls=[self.bodega, self.producto]),
+                    ft.Row(spacing=15, controls=[self.cantidad, self.fecha]),
+                    self.notas,
+                    ft.Row(
+                        alignment=ft.MainAxisAlignment.END,
+                        controls=[self.crear_boton()],
+                    ),
+                ],
+            ),
         )
+
     def crear_boton(self):
         self.boton_registrar = ft.ElevatedButton(
             "Registrar Entrada",
@@ -299,7 +306,7 @@ class _MovimientosView(ft.Container):
             )
             return
 
-        usuario_id = get_usuario_id()
+        usuario_id = AuthService.get_usuario_id()
         if not usuario_id:
             self._mostrar_snack(
                 "⚠️ No se encontró un usuario válido para registrar el movimiento.",
@@ -349,7 +356,7 @@ class _MovimientosView(ft.Container):
             width=180,
             label="Tipo",
             value="Todos",
-            on_change=self._aplicar_filtros,
+            on_select=self._aplicar_filtros,
             options=[
                 ft.DropdownOption("Todos"),
                 ft.DropdownOption("Entrada"),
@@ -362,7 +369,7 @@ class _MovimientosView(ft.Container):
             width=200,
             label="Bodega",
             value="Todas",
-            on_change=self._aplicar_filtros,
+            on_select=self._aplicar_filtros,
             options=[ft.DropdownOption("Todas")],
         )
 
@@ -375,7 +382,7 @@ class _MovimientosView(ft.Container):
 
         self.tabla = ft.DataTable(
             expand=True,
-            border=ft.border.all(1, "#eeeeee"),
+            border=ft.Border.all(1, "#eeeeee"),
             border_radius=10,
             vertical_lines=ft.BorderSide(1, "#eeeeee"),
             horizontal_lines=ft.BorderSide(1, "#eeeeee"),
@@ -464,16 +471,11 @@ class _MovimientosView(ft.Container):
         self.tabla.rows = [self._crear_fila_movimiento(m) for m in self._movimientos]
 
     def _crear_fila_movimiento(self, m: dict):
-        tipo_db = m.get("tipo", "")
-        motivo = m.get("motivo") or ""
-
-        if tipo_db == "ingreso":
-            tipo_label = "Entrada"
-        elif motivo.upper().startswith("BAJA"):
-            tipo_label = "Baja"
-        else:
-            tipo_label = "Salida"
-
+        # 'tipo' es la fuente de verdad que guarda el servicio
+        # (TIPOS_VALIDOS = ["entrada", "salida", "ajuste", "baja"]).
+        # Antes se comparaba contra "ingreso", que nunca coincide.
+        tipo_db = (m.get("tipo") or "").lower()
+        tipo_label = _TIPO_DB_A_LABEL.get(tipo_db, "Salida")
         color, texto = _COLOR_TIPO[tipo_label]
 
         fecha = m.get("fecha")
@@ -482,6 +484,17 @@ class _MovimientosView(ft.Container):
             if hasattr(fecha, "strftime")
             else str(fecha or "—")
         )
+
+        # productos_service/movimientos_service traen las relaciones anidadas
+        # via ".select('*, productos(nombre), bodegas(nombre)')", así que
+        # vienen como diccionarios anidados, no como llaves planas.
+        producto_rel = m.get("productos") or {}
+        bodega_rel = m.get("bodegas") or {}
+        usuario_rel = m.get("usuarios") or {}
+
+        producto_nombre = producto_rel.get("nombre") or "—"
+        bodega_nombre = bodega_rel.get("nombre") or "—"
+        usuario_nombre = usuario_rel.get("username") or m.get("usuario_id") or "—"
 
         return ft.DataRow(
             cells=[
@@ -496,10 +509,10 @@ class _MovimientosView(ft.Container):
                         ),
                     )
                 ),
-                ft.DataCell(ft.Text(m.get("bodega_nombre") or "—")),
-                ft.DataCell(ft.Text(m.get("producto_nombre") or "—")),
+                ft.DataCell(ft.Text(bodega_nombre)),
+                ft.DataCell(ft.Text(producto_nombre)),
                 ft.DataCell(ft.Text(str(m.get("cantidad", "")))),
-                ft.DataCell(ft.Text(m.get("usuario_nombre") or "—")),
+                ft.DataCell(ft.Text(usuario_nombre)),
             ]
         )
 
