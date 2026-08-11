@@ -31,12 +31,12 @@ def _DashboardHomeView():
         bodegas = "0"
 
     return ft.Column(
-        expand=True,
         spacing=20,
-        scroll=ft.ScrollMode.AUTO,
+        tight=True,
         controls=[
             ft.Column(
                 spacing=4,
+                tight=True,
                 controls=[
                     ft.Text(
                         "Dashboard",
@@ -54,6 +54,7 @@ def _DashboardHomeView():
             ft.Row(
                 spacing=20,
                 wrap=True,
+                run_spacing=20,
                 controls=[
                     dashboard_card("PRODUCTOS", productos, "Total inventario"),
                     dashboard_card("VENTAS", "$0", "Ventas hoy"),
@@ -81,11 +82,11 @@ def DashboardView(rol: str, on_logout):
     content_area = ft.Column(
         expand=True,
         spacing=20,
+        scroll=ft.ScrollMode.AUTO,
         controls=[_DashboardHomeView()],
     )
 
     def load_content(page_name: str):
-        # Montar la vista completa (no reutilizar .controls de otro padre)
         content_area.controls.clear()
         content_area.controls.append(VIEWS[page_name]())
         content_area.update()
@@ -100,6 +101,7 @@ def DashboardView(rol: str, on_logout):
                 expand=True,
                 padding=20,
                 bgcolor="#F5F5F5",
+                alignment=ft.alignment.top_left,
                 content=content_area,
             ),
         ],

@@ -19,12 +19,19 @@ import flet as ft
 
 
 def dashboard_card(titulo: str, numero: str, subtitulo: str) -> ft.Container:
+    # Ancho fijo: expand=True + wrap en Row deja las tarjetas con ancho 0 en Flet
     return ft.Container(
-        expand=True,
+        width=220,
         height=130,
         bgcolor="white",
         border_radius=15,
         padding=20,
+        border=ft.border.all(1, "#e5e5e5"),
+        shadow=ft.BoxShadow(
+            blur_radius=8,
+            color="#1a000000",
+            offset=ft.Offset(0, 2),
+        ),
         content=ft.Column(
             spacing=8,
             alignment=ft.MainAxisAlignment.CENTER,
