@@ -8,12 +8,32 @@ from src.ui.views.clientes_view import ClientesView
 from src.ui.views.reportes_view import ReportesView
 from src.ui.views.bitacora_view import BitacoraView
 from src.ui.components.cards import dashboard_card
+from src.services.productos_service import ProductosService
+from src.services.bodegas_service import BodegasService
+
+
+def _metric_count(result: dict) -> str:
+    """Convierte la respuesta de un service en un número para la tarjeta."""
+    if result.get("success") and result.get("data"):
+        return str(len(result["data"]))
+    return "0"
 
 
 def _DashboardHomeView():
+    try:
+        productos = _metric_count(ProductosService.get_all())
+    except Exception:
+        productos = "0"
+
+    try:
+        bodegas = _metric_count(BodegasService.get_all())
+    except Exception:
+        bodegas = "0"
+
     return ft.Column(
         expand=True,
         spacing=20,
+        scroll=ft.ScrollMode.AUTO,
         controls=[
             ft.Column(
                 spacing=4,
@@ -22,21 +42,22 @@ def _DashboardHomeView():
                         "Dashboard",
                         size=24,
                         weight=ft.FontWeight.BOLD,
-                        color="#222",
+                        color="#222222",
                     ),
                     ft.Text(
                         "Panel principal",
                         size=12,
-                        color="grey",
+                        color="#666666",
                     ),
                 ],
             ),
             ft.Row(
                 spacing=20,
+                wrap=True,
                 controls=[
-                    dashboard_card("PRODUCTOS", "0", "Total inventario"),
+                    dashboard_card("PRODUCTOS", productos, "Total inventario"),
                     dashboard_card("VENTAS", "$0", "Ventas hoy"),
-                    dashboard_card("BODEGAS", "0", "Bodegas activas"),
+                    dashboard_card("BODEGAS", bodegas, "Bodegas activas"),
                     dashboard_card("CLIENTES", "0", "Clientes registrados"),
                 ],
             ),
@@ -57,26 +78,22 @@ VIEWS = {
 
 
 def DashboardView(rol: str, on_logout):
-
-    initial = _DashboardHomeView()
     content_area = ft.Column(
         expand=True,
         spacing=20,
-        controls=initial.controls if isinstance(initial, ft.Column) else [initial],
+        controls=[_DashboardHomeView()],
     )
 
     def load_content(page_name: str):
-        view = VIEWS[page_name]()
+        # Montar la vista completa (no reutilizar .controls de otro padre)
         content_area.controls.clear()
-        if isinstance(view, ft.Column):
-            content_area.controls.extend(view.controls)
-        else:
-            content_area.controls.append(view)
+        content_area.controls.append(VIEWS[page_name]())
         content_area.update()
 
     return ft.Row(
         expand=True,
         spacing=0,
+        vertical_alignment=ft.CrossAxisAlignment.STRETCH,
         controls=[
             Sidebar(on_navigate=load_content, on_logout=on_logout),
             ft.Container(

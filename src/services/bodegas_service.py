@@ -31,12 +31,12 @@ class BodegasService:
                 "FROM bodegas ORDER BY nombre"
             )
 
-            if not res.data:
+            if not data:
                 print(" No hay bodegas registradas aún")
                 return {"success": False, "message": "No hay bodegas registradas"}
 
-            print(f" Se encontraron {len(res.data)} bodega(s)")
-            return {"success": True, "message": "Bodegas obtenidas", "data": res.data}
+            print(f" Se encontraron {len(data)} bodega(s)")
+            return {"success": True, "message": "Bodegas obtenidas", "data": data}
 
         except Exception as e:
             error_msg = str(e)
@@ -63,12 +63,12 @@ class BodegasService:
                 fetch_one=True,
             )
 
-            if not res.data:
+            if not bodega:
                 print(f"Bodega con id {bodega_id} no encontrada")
                 return {"success": False, "message": "Bodega no encontrada"}
 
-            print(f"Bodega encontrada: {res.data['nombre']}")
-            return {"success": True, "message": "Bodega encontrada", "data": res.data}
+            print(f"Bodega encontrada: {bodega['nombre']}")
+            return {"success": True, "message": "Bodega encontrada", "data": bodega}
 
         except Exception as e:
             error_msg = str(e)

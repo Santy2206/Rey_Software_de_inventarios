@@ -22,15 +22,21 @@ from src.ui.views.dashboard_view import DashboardView
 
 def App(page: ft.Page):
     page.title = "REY Inventarios"
-    page.bgcolor = "#b3001b"
-    page.vertical_alignment = "center"
-    page.horizontal_alignment = "center"
+    page.padding = 0
 
     def navigate_to(view_name: str, **kwargs):
         page.clean()
         if view_name == "login":
+            # Layout centrado solo para la pantalla de login
+            page.bgcolor = "#b3001b"
+            page.vertical_alignment = ft.MainAxisAlignment.CENTER
+            page.horizontal_alignment = ft.CrossAxisAlignment.CENTER
             page.add(LoginView(on_login=handle_login))
         elif view_name == "dashboard":
+            # Resetear alineación: si queda centrada, el shell se ve vacío/roto
+            page.bgcolor = "#F5F5F5"
+            page.vertical_alignment = ft.MainAxisAlignment.START
+            page.horizontal_alignment = ft.CrossAxisAlignment.START
             page.add(DashboardView(rol=kwargs.get("rol"), on_logout=handle_logout))
         page.update()
 
