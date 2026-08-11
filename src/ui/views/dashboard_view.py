@@ -101,7 +101,6 @@ def DashboardView(rol: str, on_logout):
                 expand=True,
                 padding=20,
                 bgcolor="#F5F5F5",
-                alignment=ft.alignment.top_left,
                 content=content_area,
             ),
         ],
