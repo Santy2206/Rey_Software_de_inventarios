@@ -1,7 +1,11 @@
 import flet as ft
 
 
-class ReportesView(ft.Container):
+def ReportesView():
+    return ft.Column(controls=[_ReportesView()])
+
+
+class _ReportesView(ft.Container):
     def __init__(self):
         super().__init__()
 
@@ -53,21 +57,11 @@ class ReportesView(ft.Container):
                     ft.Row(
                         spacing=10,
                         controls=[
+                            self.report_button("Bodegas/Productos", ft.Icons.WAREHOUSE),
+                            self.report_button("Ventas", ft.Icons.SHOPPING_CART),
+                            self.report_button("Ventas Realizadas", ft.Icons.BAR_CHART),
                             self.report_button(
-                                "Bodegas/Productos",
-                                ft.Icons.WAREHOUSE,
-                            ),
-                            self.report_button(
-                                "Ventas",
-                                ft.Icons.SHOPPING_CART,
-                            ),
-                            self.report_button(
-                                "Ventas Realizadas",
-                                ft.Icons.BAR_CHART,
-                            ),
-                            self.report_button(
-                                "Productos por Bodega",
-                                ft.Icons.INVENTORY,
+                                "Productos por Bodega", ft.Icons.INVENTORY
                             ),
                         ],
                     ),
@@ -79,9 +73,9 @@ class ReportesView(ft.Container):
                                 label="Mes",
                                 value="Marzo",
                                 options=[
-                                    ft.dropdown.Option("Enero"),
-                                    ft.dropdown.Option("Febrero"),
-                                    ft.dropdown.Option("Marzo"),
+                                    ft.DropdownOption("Enero"),  #  fixed
+                                    ft.DropdownOption("Febrero"),  #  fixed
+                                    ft.DropdownOption("Marzo"),  #  fixed
                                 ],
                             ),
                             ft.Dropdown(
@@ -89,9 +83,9 @@ class ReportesView(ft.Container):
                                 label="Año",
                                 value="2026",
                                 options=[
-                                    ft.dropdown.Option("2024"),
-                                    ft.dropdown.Option("2025"),
-                                    ft.dropdown.Option("2026"),
+                                    ft.DropdownOption("2024"),  #  fixed
+                                    ft.DropdownOption("2025"),  #  fixed
+                                    ft.DropdownOption("2026"),  #  fixed
                                 ],
                             ),
                             ft.ElevatedButton(
@@ -138,7 +132,7 @@ class ReportesView(ft.Container):
                 blur_radius=8,
                 color=ft.Colors.BLACK12,
             ),
-            alignment=ft.alignment.center,
+            alignment=ft.Alignment(0, 0),  #  fixed
             content=ft.Column(
                 alignment=ft.MainAxisAlignment.CENTER,
                 horizontal_alignment=ft.CrossAxisAlignment.CENTER,

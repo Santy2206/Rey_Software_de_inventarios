@@ -24,7 +24,13 @@ def Sidebar(on_navigate, on_logout):
             expand=True,
             spacing=20,
             controls=[
-                ft.Text("👑 REY", size=24, weight="bold", color="white"),
+                ft.Column(
+                    spacing=5,
+                    controls=[
+                        ft.Text("👑 REY", size=24, weight="bold", color="white"),
+                        ft.Text("Inventarios", color="white70", size=12),
+                    ],
+                ),
                 ft.Divider(color="white24"),
                 sidebar_item(ft.Icons.DASHBOARD, "Dashboard", "dashboard", on_navigate),
                 sidebar_item(ft.Icons.WAREHOUSE, "Bodegas", "BODEGAS", on_navigate),
