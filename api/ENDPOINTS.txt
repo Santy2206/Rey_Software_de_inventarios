@@ -1,0 +1,41 @@
+ENDPOINTS - SISTEMA DE INVENTARIOS
+
+BASE URL
+http://127.0.0.1:8000
+
+
+BODEGAS
+--------
+
+GET /bodegas
+Descripción: Obtiene todas las bodegas registradas.
+
+POST /bodegas
+Descripción: Crea una nueva bodega.
+
+
+PRODUCTOS
+---------
+
+GET /productos
+Descripción: Obtiene todos los productos registrados.
+
+POST /productos
+Descripción: Crea un nuevo producto.
+
+GET /productos/{producto_id}
+Descripción: Obtiene un producto específico mediante su ID.
+
+PUT /productos/{producto_id}
+Descripción: Actualiza la información de un producto existente.
+
+DELETE /productos/{producto_id}
+Descripción: Elimina un producto mediante su ID.
+
+
+RESPUESTAS
+----------
+
+Las solicitudes fueron probadas mediante Postman y se verificó
+el funcionamiento de las operaciones de consulta, creación,
+actualización y eliminación.
