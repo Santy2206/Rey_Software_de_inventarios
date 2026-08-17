@@ -10,6 +10,7 @@ from src.ui.views.bitacora_view import BitacoraView
 from src.ui.components.cards import dashboard_card
 from src.services.productos_service import ProductosService
 from src.services.bodegas_service import BodegasService
+from src.services.ventas_service import VentasService
 
 
 def _metric_count(result: dict) -> str:
@@ -29,6 +30,16 @@ def _DashboardHomeView():
         bodegas = _metric_count(BodegasService.get_all())
     except Exception:
         bodegas = "0"
+
+    try:
+        res_ventas = VentasService.total_hoy()
+        ventas = (
+            f"${float(res_ventas['data']):,.0f}"
+            if res_ventas.get("success")
+            else "$0"
+        )
+    except Exception:
+        ventas = "$0"
 
     return ft.Column(
         spacing=20,
@@ -57,7 +68,7 @@ def _DashboardHomeView():
                 run_spacing=20,
                 controls=[
                     dashboard_card("PRODUCTOS", productos, "Total inventario"),
-                    dashboard_card("VENTAS", "$0", "Ventas hoy"),
+                    dashboard_card("VENTAS", ventas, "Ventas hoy"),
                     dashboard_card("BODEGAS", bodegas, "Bodegas activas"),
                     dashboard_card("CLIENTES", "0", "Clientes registrados"),
                 ],
