@@ -19,7 +19,9 @@ productos_view.py sigue siendo un stub — cuando la construyan,
 """
 
 import os
+from pathlib import Path
 
+import openpyxl
 import pandas as pd
 
 from src.core.local_db import run_query
@@ -35,6 +37,35 @@ def _registrar_bitacora_productos(detalle: dict):
             BitacoraService.registrar(usuario_id, "PRODUCTO", detalle)
     except Exception as e:
         print(f" Error al registrar bitácora de producto: {e}")
+
+
+def _aplicar_estilos_excel(ruta: str):
+    """Aplica formato básico (negrita en encabezados y autoajuste)."""
+    try:
+        wb = openpyxl.load_workbook(ruta)
+        for ws in wb.worksheets:
+            header_font = openpyxl.styles.Font(bold=True)
+            fill = openpyxl.styles.PatternFill(
+                start_color="D9E1F2", end_color="D9E1F2", fill_type="solid"
+            )
+            for cell in ws[1]:
+                cell.font = header_font
+                cell.fill = fill
+            for col in ws.columns:
+                max_length = 0
+                col_letter = col[0].column_letter
+                for cell in col:
+                    try:
+                        value = str(cell.value) if cell.value is not None else ""
+                        if len(value) > max_length:
+                            max_length = len(value)
+                    except Exception:
+                        pass
+                adjusted_width = min(max_length + 2, 50)
+                ws.column_dimensions[col_letter].width = adjusted_width
+        wb.save(ruta)
+    except Exception as e:
+        print(f" No se pudieron aplicar estilos al Excel: {e}")
 
 
 class ProductosService:
@@ -136,33 +167,35 @@ class ProductosService:
     @staticmethod
     def create(
         nombre: str,
-        descripcion: str,
-        sku: str,
-        precio: float,
-        stock_actual: int,
         bodega_id: str,
+        descripcion: str | None = None,
+        sku: str | None = None,
+        codigo: str | None = None,
+        precio: float = 0.0,
+        stock_actual: int = 0,
     ):
         """
         Crea un nuevo producto.
 
         Parámetros:
             nombre:       nombre del producto, ej: "Perfume Floral 100ml"
-            descripcion:  detalle libre del producto
-            sku:          código interno/referencia del producto
-            precio:       precio de venta
-            stock_actual: cantidad inicial disponible
             bodega_id:    id de la bodega donde se almacena
+            descripcion:  detalle libre del producto (opcional)
+            sku:          código interno/referencia del producto (opcional)
+            codigo:       código de fragancia (opcional, usado en bodegas de fragancias)
+            precio:       precio de venta (por defecto 0)
+            stock_actual: cantidad inicial disponible (por defecto 0)
         """
         print(f"--- Creando producto: {nombre} ---")
         try:
             producto = run_query(
                 """
                 INSERT INTO productos
-                    (nombre, descripcion, sku, precio, stock_actual, bodega_id)
-                VALUES (%s, %s, %s, %s, %s, %s)
+                    (nombre, bodega_id, descripcion, sku, codigo, precio, stock_actual)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
                 RETURNING *
                 """,
-                (nombre, descripcion, sku, precio, stock_actual, bodega_id),
+                (nombre, bodega_id, descripcion, sku, codigo, precio, stock_actual),
                 fetch_one=True,
             )
 
@@ -174,7 +207,6 @@ class ProductosService:
                     "descripcion": f"Producto '{nombre}' creado",
                     "producto_id": producto["id"],
                     "nombre": nombre,
-                    "sku": sku,
                     "bodega_id": bodega_id,
                 }
             )
@@ -198,10 +230,11 @@ class ProductosService:
     def update(
         producto_id: str,
         nombre: str,
-        descripcion: str,
-        sku: str,
-        precio: float,
         bodega_id: str,
+        descripcion: str | None = None,
+        sku: str | None = None,
+        codigo: str | None = None,
+        precio: float = 0.0,
     ):
         """
         Actualiza los datos de un producto existente.
@@ -211,10 +244,11 @@ class ProductosService:
         Parámetros:
             producto_id: el id del producto a actualizar
             nombre:      nuevo nombre
-            descripcion: nueva descripción
-            sku:         nuevo código/referencia
-            precio:      nuevo precio
             bodega_id:   nueva bodega asignada
+            descripcion: nueva descripción (opcional)
+            sku:         nuevo código/referencia (opcional)
+            codigo:      nuevo código de fragancia (opcional)
+            precio:      nuevo precio (por defecto 0)
         """
         print(f"--- Actualizando producto id: {producto_id} ---")
         try:
@@ -222,14 +256,15 @@ class ProductosService:
                 """
                 UPDATE productos
                 SET nombre = %s,
+                    bodega_id = %s,
                     descripcion = %s,
                     sku = %s,
-                    precio = %s,
-                    bodega_id = %s
+                    codigo = %s,
+                    precio = %s
                 WHERE id = %s
                 RETURNING *
                 """,
-                (nombre, descripcion, sku, precio, bodega_id, producto_id),
+                (nombre, bodega_id, descripcion, sku, codigo, precio, producto_id),
                 fetch_one=True,
             )
 
@@ -244,7 +279,6 @@ class ProductosService:
                     "descripcion": f"Producto '{nombre}' actualizado",
                     "producto_id": producto_id,
                     "nombre": nombre,
-                    "sku": sku,
                     "bodega_id": bodega_id,
                 }
             )
@@ -262,6 +296,114 @@ class ProductosService:
             return {
                 "success": False,
                 "message": f"Error al actualizar producto: {error_msg}",
+            }
+
+    @staticmethod
+    def exportar_excel(bodega_id: str | None = None, ruta_salida: str | None = None):
+        """
+        Exporta los productos a Excel.
+
+        Si no hay productos, genera una plantilla de importación con las
+        columnas esperadas: nombre, descripcion, sku, precio, stock.
+
+        Parámetros:
+            bodega_id: filtrar por bodega; None o 'todas' trae todos.
+            ruta_salida: ruta completa del archivo .xlsx. Si no se indica,
+                         se guarda en assets/downloads/productos_export.xlsx.
+
+        Retorna:
+            dict: contrato estándar; incluye 'ruta', 'url' y 'es_plantilla'.
+        """
+        print("--- Exportando productos a Excel ---")
+        try:
+            project_root = Path(__file__).resolve().parents[2]
+            if not ruta_salida:
+                downloads_dir = project_root / "assets" / "downloads"
+                downloads_dir.mkdir(parents=True, exist_ok=True)
+                ruta_salida = str(downloads_dir / "productos_export.xlsx")
+            else:
+                ruta_salida = str(ruta_salida)
+
+            if bodega_id and str(bodega_id).lower() not in ("", "todas"):
+                res = ProductosService.get_by_bodega(bodega_id)
+            else:
+                res = ProductosService.get_all()
+
+            columnas_salida = [
+                "nombre",
+                "codigo",
+                "stock",
+            ]
+
+            if res.get("success") and res.get("data"):
+                productos = res["data"]
+                filas = []
+                for p in productos:
+                    filas.append(
+                        {
+                            "nombre": p.get("nombre", ""),
+                            "codigo": p.get("codigo", ""),
+                            "stock": int(p.get("stock_actual", 0) or 0),
+                        }
+                    )
+                df = pd.DataFrame(filas, columns=columnas_salida)
+                es_plantilla = False
+            else:
+                # Plantilla vacía con una fila de ejemplo aparte
+                df_plantilla = pd.DataFrame(columns=columnas_salida)
+                df_ejemplo = pd.DataFrame(
+                    [
+                        {
+                            "nombre": "Perfume Floral 100ml",
+                            "codigo": "F-001",
+                            "stock": 15,
+                        }
+                    ],
+                    columns=columnas_salida,
+                )
+                with pd.ExcelWriter(ruta_salida, engine="openpyxl") as writer:
+                    df_plantilla.to_excel(
+                        writer, sheet_name="Plantilla", index=False
+                    )
+                    df_ejemplo.to_excel(
+                        writer, sheet_name="Ejemplo", index=False
+                    )
+
+                _aplicar_estilos_excel(ruta_salida)
+
+                return {
+                    "success": True,
+                    "message": "Plantilla de productos generada",
+                    "ruta": ruta_salida,
+                    "url": "/downloads/productos_export.xlsx",
+                    "es_plantilla": True,
+                }
+
+            df.to_excel(ruta_salida, index=False, engine="openpyxl")
+            _aplicar_estilos_excel(ruta_salida)
+
+            _registrar_bitacora_productos(
+                {
+                    "descripcion": f"Exportación de {len(df)} productos a Excel",
+                    "bodega_id": bodega_id,
+                    "archivo": ruta_salida,
+                }
+            )
+
+            return {
+                "success": True,
+                "message": f"Exportados {len(df)} productos",
+                "ruta": ruta_salida,
+                "url": "/downloads/productos_export.xlsx",
+                "es_plantilla": False,
+            }
+
+        except Exception as e:
+            error_msg = str(e)
+            print(f" Error en ProductosService.exportar_excel: {error_msg}")
+            return {
+                "success": False,
+                "message": f"Error al exportar productos: {error_msg}",
             }
 
     @staticmethod
@@ -313,7 +455,8 @@ class ProductosService:
         Columnas aceptadas (no importa mayúsculas/minúsculas ni tildes):
             - nombre      (o 'producto', 'name')
             - descripcion (o 'description', 'desc')
-            - sku         (o 'referencia', 'ref', 'codigo', 'code')
+            - sku         (o 'referencia', 'ref', 'codigo_sku', 'code')
+            - codigo      (o 'codigo_fragancia', 'fragancia', 'fragance_code')
             - precio      (o 'price', 'valor', 'costo')
             - stock       (o 'stock_actual', 'cantidad', 'quantity', 'qty')
 
@@ -370,7 +513,14 @@ class ProductosService:
             mapeos = {
                 "nombre": ["nombre", "producto", "name"],
                 "descripcion": ["descripcion", "description", "desc"],
-                "sku": ["sku", "referencia", "ref", "codigo", "code"],
+                "sku": ["sku", "referencia", "ref", "codigo_sku", "code"],
+                "codigo": [
+                    "codigo",
+                    "codigo_fragancia",
+                    "fragancia",
+                    "fragance_code",
+                    "fragance",
+                ],
                 "precio": ["precio", "price", "valor", "costo"],
                 "stock_actual": [
                     "stock",
@@ -390,6 +540,7 @@ class ProductosService:
             col_nombre = _buscar_columna(mapeos["nombre"])
             col_descripcion = _buscar_columna(mapeos["descripcion"])
             col_sku = _buscar_columna(mapeos["sku"])
+            col_codigo = _buscar_columna(mapeos["codigo"])
             col_precio = _buscar_columna(mapeos["precio"])
             col_stock = _buscar_columna(mapeos["stock_actual"])
 
@@ -420,6 +571,13 @@ class ProductosService:
                     else None
                 )
 
+                codigo_raw = fila.get(col_codigo) if col_codigo else None
+                codigo = (
+                    str(codigo_raw).strip()
+                    if pd.notna(codigo_raw)
+                    else None
+                )
+
                 precio_raw = fila.get(col_precio) if col_precio else 0
                 try:
                     precio = float(str(precio_raw).replace(",", "").strip() or 0)
@@ -437,6 +595,7 @@ class ProductosService:
                     bodega_id=bodega_id,
                     descripcion=descripcion,
                     sku=sku,
+                    codigo=codigo,
                     precio=precio,
                     stock_actual=stock,
                 )

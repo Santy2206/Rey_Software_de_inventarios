@@ -1,10 +1,12 @@
 import threading
 import flet as ft
+from src.services.auth_service import AuthService
 from src.services.bodegas_service import BodegasService
 from src.ui.components.status_header import StatusHeader
 from src.ui.components.page_header import PageHeader
 
 _CARD_COLORS = ["#f5b400", "#c2185b", "#2563eb", "#16a34a", "#7c3aed"]
+_PALABRA_ELIMINAR = "eliminar"
 
 
 def BodegasView():
@@ -22,6 +24,8 @@ class _BodegasView(ft.Container):
         # ── Estado interno ──────────────────────────────────────────────────
         self._bodegas: list[dict] = []
         self._bodega_editando: dict | None = None
+        self._bodega_pendiente_eliminar: dict | None = None
+        self._overlays_registrados = False
 
         # ── Controles de texto actualizables ───────────────────────────────
         self._total_text = ft.Text("…", size=16, weight=ft.FontWeight.BOLD)
@@ -41,41 +45,65 @@ class _BodegasView(ft.Container):
             ]
         )
 
-        # Campos del formulario
+        # Campos del formulario (reutilizados al abrir diálogos)
         self._campo_nombre = ft.TextField(
             label="Nombre de la bodega",
             hint_text='Ej: "Bodega Principal"',
             border_radius=10,
+            width=360,
         )
         self._campo_tipo = ft.TextField(
             label="Tipo",
             hint_text='Ej: "Fragancias", "General"',
             border_radius=10,
+            width=360,
         )
+        self._campo_password_editar = ft.TextField(
+            label="Contraseña de su sesión",
+            hint_text="Confirme su identidad para editar",
+            password=True,
+            can_reveal_password=True,
+            border_radius=10,
+            width=360,
+        )
+
+        # Campos de seguridad para eliminar
+        self._campo_password_eliminar = ft.TextField(
+            label="Contraseña de su sesión",
+            hint_text="Confirme su identidad para eliminar",
+            password=True,
+            can_reveal_password=True,
+            border_radius=10,
+            width=360,
+        )
+        self._campo_palabra_eliminar = ft.TextField(
+            label=f'Escriba "{_PALABRA_ELIMINAR}" para confirmar',
+            hint_text=_PALABRA_ELIMINAR,
+            border_radius=10,
+            width=360,
+        )
+        self._texto_eliminar = ft.Text("", size=13, color="#b71c1c", width=360)
+        self._ayuda_seguridad_editar = ft.Text(
+            "Por seguridad, confirme su contraseña para guardar cambios.",
+            size=12,
+            color="grey",
+            width=360,
+        )
+        self._ayuda_seguridad_eliminar = ft.Text(
+            "Esta acción es permanente. Confirme su contraseña y "
+            f'escriba la palabra "{_PALABRA_ELIMINAR}".',
+            size=12,
+            color="grey",
+            width=360,
+        )
+        self._error_dialogo = ft.Text("", size=12, color="#d32f2f", width=360, visible=False)
 
         # ── Barra de estado
         self._status_header = StatusHeader()
 
-        # ── Diálogo modal
-        self._dialog = ft.AlertDialog(
-            modal=True,
-            title=ft.Text(""),
-            content=ft.Column(
-                tight=True,
-                spacing=12,
-                controls=[self._campo_nombre, self._campo_tipo],
-            ),
-            actions=[
-                ft.TextButton("Cancelar", on_click=self._cerrar_dialogo),
-                ft.ElevatedButton(
-                    "Guardar",
-                    bgcolor="#9eff8f",
-                    color="black",
-                    on_click=self._guardar_bodega,
-                ),
-            ],
-            actions_alignment=ft.MainAxisAlignment.END,
-        )
+        # Diálogos se construyen al abrir (Flet refresca mejor así)
+        self._dialog = None
+        self._dialog_eliminar = None
 
         # ── SnackBar
         self._snackbar = ft.SnackBar(
@@ -100,20 +128,67 @@ class _BodegasView(ft.Container):
     def did_mount(self):
         """
         Punto correcto para:
-          1. Registrar dialog y snackbar en page.overlay (una sola vez).
+          1. Registrar snackbar en page.overlay (una sola vez).
           2. Arrancar la carga de datos en un hilo de fondo.
         """
-        # FIX 1 — agregar dialog al overlay una sola vez
-        self.page.overlay.append(self._dialog)
-
-        # FIX 2 — agregar snackbar al overlay (no al Column)
-        self.page.overlay.append(self._snackbar)
+        if not self._overlays_registrados:
+            self.page.overlay.append(self._snackbar)
+            self._overlays_registrados = True
 
         self.page.update()
 
         # FIX 3 — cargar datos en segundo plano para no bloquear la UI
         self._status_header.load(self.page)
         threading.Thread(target=self._cargar_bodegas, daemon=True).start()
+
+    def _mostrar_dialogo(self, dlg: ft.AlertDialog):
+        """Abre un AlertDialog con el API actual de Flet (show_dialog)."""
+        self._set_error_dialogo("")
+        if dlg not in self.page.overlay:
+            self.page.overlay.append(dlg)
+        # Flet 0.84: show_dialog / pop_dialog gestionan el stack de diálogos
+        if hasattr(self.page, "show_dialog"):
+            self.page.show_dialog(dlg)
+        else:
+            dlg.open = True
+            self.page.update()
+
+    def _ocultar_dialogo(self, dlg: ft.AlertDialog | None):
+        if dlg is None:
+            return
+        try:
+            if hasattr(self.page, "pop_dialog"):
+                self.page.pop_dialog()
+            else:
+                dlg.open = False
+                self.page.update()
+        except Exception:
+            dlg.open = False
+            try:
+                self.page.update()
+            except Exception:
+                pass
+
+    def _set_error_dialogo(self, mensaje: str):
+        """Muestra u oculta el error dentro del diálogo abierto (visible sobre el modal)."""
+        self._error_dialogo.value = mensaje or ""
+        self._error_dialogo.visible = bool(mensaje)
+        if self._campo_password_editar:
+            self._campo_password_editar.error_text = (
+                mensaje if mensaje and "contraseña" in mensaje.lower() else None
+            )
+        if self._campo_password_eliminar:
+            self._campo_password_eliminar.error_text = (
+                mensaje if mensaje and "contraseña" in mensaje.lower() else None
+            )
+        if self._campo_palabra_eliminar and mensaje and "eliminar" in mensaje.lower():
+            self._campo_palabra_eliminar.error_text = mensaje
+        elif self._campo_palabra_eliminar:
+            self._campo_palabra_eliminar.error_text = None
+        try:
+            self.page.update()
+        except Exception:
+            pass
 
     # ─────────────────────────────────────────────────────────────────────────
     # Carga de datos (corre en Thread separado)
@@ -363,49 +438,158 @@ class _BodegasView(ft.Container):
         self._bodega_editando = None
         self._campo_nombre.value = ""
         self._campo_tipo.value = ""
-        self._dialog.title = ft.Text("Nueva Bodega")
-        # FIX 1: NO hacemos page.overlay.append() aquí — ya está en el overlay desde did_mount
-        self._dialog.open = True
-        self.page.update()
+        self._campo_password_editar.value = ""
+        self._campo_password_editar.error_text = None
+        self._dialog = ft.AlertDialog(
+            modal=True,
+            title=ft.Text("Nueva Bodega"),
+            content=ft.Column(
+                tight=True,
+                spacing=12,
+                width=360,
+                controls=[
+                    self._campo_nombre,
+                    self._campo_tipo,
+                    self._error_dialogo,
+                ],
+            ),
+            actions=[
+                ft.TextButton("Cancelar", on_click=self._cerrar_dialogo),
+                ft.ElevatedButton(
+                    "Guardar",
+                    bgcolor="#9eff8f",
+                    color="black",
+                    on_click=self._guardar_bodega,
+                ),
+            ],
+            actions_alignment=ft.MainAxisAlignment.END,
+        )
+        self._mostrar_dialogo(self._dialog)
 
     def _abrir_dialogo_editar(self, bodega: dict):
         self._bodega_editando = bodega
         self._campo_nombre.value = bodega.get("nombre", "")
         self._campo_tipo.value = bodega.get("tipo", "")
-        self._dialog.title = ft.Text(f"Editar: {bodega.get('nombre')}")
-        # FIX 1: solo toggleamos open, no volvemos a hacer append
-        self._dialog.open = True
-        self.page.update()
+        self._campo_password_editar.value = ""
+        self._campo_password_editar.error_text = None
+        self._dialog = ft.AlertDialog(
+            modal=True,
+            title=ft.Text(f"Editar: {bodega.get('nombre')}"),
+            content=ft.Column(
+                tight=True,
+                spacing=12,
+                width=360,
+                controls=[
+                    self._campo_nombre,
+                    self._campo_tipo,
+                    self._ayuda_seguridad_editar,
+                    self._campo_password_editar,
+                    self._error_dialogo,
+                ],
+            ),
+            actions=[
+                ft.TextButton("Cancelar", on_click=self._cerrar_dialogo),
+                ft.ElevatedButton(
+                    "Guardar",
+                    bgcolor="#9eff8f",
+                    color="black",
+                    on_click=self._guardar_bodega,
+                ),
+            ],
+            actions_alignment=ft.MainAxisAlignment.END,
+        )
+        self._mostrar_dialogo(self._dialog)
 
     def _cerrar_dialogo(self, e=None):
-        self._dialog.open = False
-        self.page.update()
+        self._ocultar_dialogo(self._dialog)
+        self._dialog = None
+        self._campo_password_editar.value = ""
+        self._campo_password_editar.error_text = None
+        self._set_error_dialogo("")
+
+    def _abrir_dialogo_eliminar(self, bodega: dict):
+        self._bodega_pendiente_eliminar = bodega
+        nombre = bodega.get("nombre", "esta bodega")
+        self._texto_eliminar.value = (
+            f'¿Seguro que desea eliminar la bodega "{nombre}"?'
+        )
+        self._campo_password_eliminar.value = ""
+        self._campo_palabra_eliminar.value = ""
+        self._campo_password_eliminar.error_text = None
+        self._campo_palabra_eliminar.error_text = None
+        self._dialog_eliminar = ft.AlertDialog(
+            modal=True,
+            title=ft.Text("Eliminar bodega"),
+            content=ft.Column(
+                tight=True,
+                spacing=12,
+                width=360,
+                controls=[
+                    self._texto_eliminar,
+                    self._ayuda_seguridad_eliminar,
+                    self._campo_password_eliminar,
+                    self._campo_palabra_eliminar,
+                    self._error_dialogo,
+                ],
+            ),
+            actions=[
+                ft.TextButton("Cancelar", on_click=self._cerrar_dialogo_eliminar),
+                ft.ElevatedButton(
+                    "Eliminar definitivamente",
+                    bgcolor="#d32f2f",
+                    color="white",
+                    on_click=self._confirmar_eliminar_bodega,
+                ),
+            ],
+            actions_alignment=ft.MainAxisAlignment.END,
+        )
+        self._mostrar_dialogo(self._dialog_eliminar)
+
+    def _cerrar_dialogo_eliminar(self, e=None):
+        self._ocultar_dialogo(self._dialog_eliminar)
+        self._dialog_eliminar = None
+        self._bodega_pendiente_eliminar = None
+        self._campo_password_eliminar.value = ""
+        self._campo_palabra_eliminar.value = ""
+        self._campo_password_eliminar.error_text = None
+        self._campo_palabra_eliminar.error_text = None
+        self._set_error_dialogo("")
 
     # ─────────────────────────────────────────────────────────────────────────
     # CRUD — delegan al servicio, luego recargan en background
     # ─────────────────────────────────────────────────────────────────────────
 
     def _guardar_bodega(self, e):
-        nombre = self._campo_nombre.value.strip()
-        tipo = self._campo_tipo.value.strip()
+        nombre = (self._campo_nombre.value or "").strip()
+        tipo = (self._campo_tipo.value or "").strip()
 
         if not nombre or not tipo:
-            self._mostrar_snack("⚠️ Nombre y Tipo son obligatorios.", error=True)
-            self.page.update()
+            self._set_error_dialogo("Nombre y Tipo son obligatorios.")
             return
 
+        # Editar requiere revalidar la contraseña de la sesión
+        if self._bodega_editando is not None:
+            password = (self._campo_password_editar.value or "").strip()
+            auth = AuthService.verificar_password_sesion(password)
+            if not auth["success"]:
+                self._set_error_dialogo(auth["message"])
+                return
+
+        editando = self._bodega_editando
         self._cerrar_dialogo()
 
-        # FIX 3: la escritura + recarga también van en un hilo
         def _worker():
-            if self._bodega_editando is None:
-                result = BodegasService.create(nombre=nombre, tipo=tipo)
-            else:
-                result = BodegasService.update(
-                    bodega_id=self._bodega_editando["id"],
-                    nombre=nombre,
-                    tipo=tipo,
-                )
+            try:
+                if editando is None:
+                    result = BodegasService.create(nombre=nombre, tipo=tipo)
+                else:
+                    result = BodegasService.update(
+                        bodega_id=str(editando["id"]),
+                        nombre=nombre,
+                        tipo=tipo,
+                    )
+            except Exception as ex:
+                result = {"success": False, "message": f"Error al guardar: {ex}"}
             self._mostrar_snack(result["message"], error=not result["success"])
             if result["success"]:
                 self._loading_ring.visible = True
@@ -415,8 +599,39 @@ class _BodegasView(ft.Container):
         threading.Thread(target=_worker, daemon=True).start()
 
     def _eliminar_bodega(self, bodega_id: str, nombre: str):
+        bodega = next((b for b in self._bodegas if b.get("id") == bodega_id), None)
+        if bodega is None:
+            bodega = {"id": bodega_id, "nombre": nombre}
+        self._abrir_dialogo_eliminar(bodega)
+
+    def _confirmar_eliminar_bodega(self, e=None):
+        bodega = self._bodega_pendiente_eliminar
+        if not bodega:
+            self._cerrar_dialogo_eliminar()
+            return
+
+        password = (self._campo_password_eliminar.value or "").strip()
+        palabra = (self._campo_palabra_eliminar.value or "").strip().lower()
+
+        if palabra != _PALABRA_ELIMINAR:
+            self._set_error_dialogo(
+                f'Para eliminar debe escribir exactamente "{_PALABRA_ELIMINAR}".'
+            )
+            return
+
+        auth = AuthService.verificar_password_sesion(password)
+        if not auth["success"]:
+            self._set_error_dialogo(auth["message"])
+            return
+
+        bodega_id = str(bodega["id"])
+        self._cerrar_dialogo_eliminar()
+
         def _worker():
-            result = BodegasService.delete(bodega_id=bodega_id)
+            try:
+                result = BodegasService.delete(bodega_id=bodega_id)
+            except Exception as ex:
+                result = {"success": False, "message": f"Error al eliminar: {ex}"}
             self._mostrar_snack(result["message"], error=not result["success"])
             if result["success"]:
                 self._loading_ring.visible = True

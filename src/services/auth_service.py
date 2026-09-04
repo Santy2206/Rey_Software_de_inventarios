@@ -148,6 +148,56 @@ class AuthService:
             return None
 
     @staticmethod
+    def verificar_password_sesion(password_typed: str):
+        """
+        Verifica la contraseña del usuario de la sesión actual.
+
+        Útil para re-autenticar antes de acciones sensibles (editar/eliminar).
+
+        Retorna:
+            dict: {"success": bool, "message": str}
+        """
+        try:
+            usuario_id = AuthService.get_usuario_id()
+            if not usuario_id:
+                return {
+                    "success": False,
+                    "message": "No hay sesión activa. Inicie sesión de nuevo.",
+                }
+
+            if not password_typed or not str(password_typed).strip():
+                return {
+                    "success": False,
+                    "message": "Debe ingresar su contraseña",
+                }
+
+            user_data = run_query(
+                "SELECT id, password_hash FROM usuarios WHERE id = %s",
+                (usuario_id,),
+                fetch_one=True,
+            )
+            if not user_data:
+                return {
+                    "success": False,
+                    "message": "Usuario de sesión no encontrado",
+                }
+
+            if not _verificar_password(password_typed, user_data["password_hash"]):
+                return {
+                    "success": False,
+                    "message": "Contraseña incorrecta",
+                }
+
+            return {"success": True, "message": "Contraseña verificada"}
+        except Exception as e:
+            error_msg = str(e)
+            print(f"Error en AuthService.verificar_password_sesion: {error_msg}")
+            return {
+                "success": False,
+                "message": f"Error al verificar contraseña: {error_msg}",
+            }
+
+    @staticmethod
     def get_rol():
         """Retorna el rol del usuario autenticado en la sesión actual."""
         if _current_usuario_rol is None:

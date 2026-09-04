@@ -18,6 +18,7 @@ Reglas:
     - SIN ft.app() — esta vista es montada por dashboard_view.py.
 """
 
+import os
 import threading
 import flet as ft
 
@@ -78,24 +79,8 @@ class _ProductosView(ft.Container):
             hint_text='Ej: "Perfume Floral 100ml"',
             border_radius=10,
         )
-        self._campo_descripcion = ft.TextField(
-            label="Descripción",
-            hint_text="Detalle del producto (opcional)",
-            border_radius=10,
-        )
-        self._campo_sku = ft.TextField(
-            label="SKU / Referencia *",
-            hint_text="Ej: PF-001",
-            border_radius=10,
-        )
-        self._campo_precio = ft.TextField(
-            label="Precio *",
-            hint_text="Ej: 25000",
-            keyboard_type=ft.KeyboardType.NUMBER,
-            border_radius=10,
-        )
         self._campo_stock = ft.TextField(
-            label="Stock inicial *",
+            label="Stock *",
             value="0",
             keyboard_type=ft.KeyboardType.NUMBER,
             border_radius=10,
@@ -104,6 +89,13 @@ class _ProductosView(ft.Container):
             label="Bodega *",
             options=[],
             border_radius=10,
+            on_select=self._on_bodega_seleccionada,
+        )
+        self._campo_codigo = ft.TextField(
+            label="Código de fragancia *",
+            hint_text='Ej: "F-001"',
+            border_radius=10,
+            visible=False,
         )
 
         # ── Diálogo modal
@@ -115,11 +107,9 @@ class _ProductosView(ft.Container):
                 spacing=12,
                 controls=[
                     self._campo_nombre,
-                    self._campo_descripcion,
-                    self._campo_sku,
-                    self._campo_precio,
                     self._campo_stock,
                     self._campo_bodega,
+                    self._campo_codigo,
                 ],
             ),
             actions=[
@@ -276,6 +266,13 @@ class _ProductosView(ft.Container):
             status_control=self._status_header.control,
             action_buttons=[
                 ft.ElevatedButton(
+                    "Exportar Excel",
+                    icon=ft.Icons.DOWNLOAD,
+                    bgcolor="#2196F3",
+                    color="white",
+                    on_click=self._exportar_excel,
+                ),
+                ft.ElevatedButton(
                     "Importar Excel",
                     icon=ft.Icons.UPLOAD_FILE,
                     bgcolor="#2196F3",
@@ -298,10 +295,9 @@ class _ProductosView(ft.Container):
 
     def _producto_card(self, producto: dict, color: str):
         nombre = producto.get("nombre", "Sin nombre")
-        sku = producto.get("sku", "—")
+        codigo = producto.get("codigo") or ""
         bodega = producto.get("bodega_nombre", "—")
         stock = producto.get("stock_actual", 0)
-        precio = producto.get("precio", 0)
 
         return ft.Container(
             width=280,
@@ -339,9 +335,10 @@ class _ProductosView(ft.Container):
                                                 size=14,
                                             ),
                                             ft.Text(
-                                                f"SKU: {sku}",
-                                                size=11,
-                                                color="grey",
+                                                f"Stock: {stock}",
+                                                size=12,
+                                                weight=ft.FontWeight.BOLD,
+                                                color=color,
                                             ),
                                         ],
                                     ),
@@ -350,21 +347,10 @@ class _ProductosView(ft.Container):
                         ],
                     ),
                     ft.Text(f"Bodega: {bodega}", size=12, color="grey"),
-                    ft.Row(
-                        spacing=8,
-                        controls=[
-                            ft.Text(
-                                f"Stock: {stock}",
-                                size=12,
-                                weight=ft.FontWeight.BOLD,
-                            ),
-                            ft.Text(
-                                f"${precio}",
-                                size=12,
-                                weight=ft.FontWeight.BOLD,
-                                color=color,
-                            ),
-                        ],
+                    (
+                        ft.Text(f"Código: {codigo}", size=12, color="grey")
+                        if codigo
+                        else ft.Container()
                     ),
                     ft.Row(
                         spacing=8,
@@ -451,15 +437,35 @@ class _ProductosView(ft.Container):
     # Diálogos
     # ─────────────────────────────────────────────────────────────────────────
 
+    def _es_bodega_fragancia(self, bodega_id: str | None) -> bool:
+        if not bodega_id or not self._bodegas:
+            return False
+        for b in self._bodegas:
+            if b.get("id") == bodega_id:
+                nombre = (b.get("nombre") or "").lower()
+                return "fragancia" in nombre
+        return False
+
+    def _on_bodega_seleccionada(self, e=None):
+        """Muestra el campo código cuando la bodega es de fragancias."""
+        bodega_id = self._campo_bodega.value
+        es_fragancia = self._es_bodega_fragancia(bodega_id)
+        self._campo_codigo.visible = es_fragancia
+        if not es_fragancia:
+            self._campo_codigo.value = ""
+        try:
+            self.page.update()
+        except Exception:
+            pass
+
     def _abrir_dialogo_crear(self, e=None):
         self._producto_editando = None
         self._campo_nombre.value = ""
-        self._campo_descripcion.value = ""
-        self._campo_sku.value = ""
-        self._campo_precio.value = ""
         self._campo_stock.value = "0"
         self._campo_stock.disabled = False
         self._campo_bodega.value = None
+        self._campo_codigo.value = ""
+        self._campo_codigo.visible = False
         self._dialog.title = ft.Text("Nuevo Producto")
         self._dialog.open = True
         self.page.update()
@@ -467,13 +473,14 @@ class _ProductosView(ft.Container):
     def _abrir_dialogo_editar(self, producto: dict):
         self._producto_editando = producto
         self._campo_nombre.value = producto.get("nombre", "")
-        self._campo_descripcion.value = producto.get("descripcion", "")
-        self._campo_sku.value = producto.get("sku", "")
-        self._campo_precio.value = str(producto.get("precio", ""))
+        self._campo_codigo.value = producto.get("codigo") or ""
         # stock_actual no se edita desde este diálogo — se muestra solo lectura
         self._campo_stock.value = str(producto.get("stock_actual", "0"))
         self._campo_stock.disabled = True
         self._campo_bodega.value = producto.get("bodega_id")
+        self._campo_codigo.visible = self._es_bodega_fragancia(
+            producto.get("bodega_id")
+        )
         self._dialog.title = ft.Text(f"Editar: {producto.get('nombre')}")
         self._dialog.open = True
         self.page.update()
@@ -488,25 +495,34 @@ class _ProductosView(ft.Container):
 
     def _guardar_producto(self, e):
         nombre = (self._campo_nombre.value or "").strip()
-        descripcion = (self._campo_descripcion.value or "").strip()
-        sku = (self._campo_sku.value or "").strip()
-        precio_raw = (self._campo_precio.value or "").strip()
         stock_raw = (self._campo_stock.value or "").strip()
         bodega_id = self._campo_bodega.value
+        codigo = (
+            (self._campo_codigo.value or "").strip()
+            if self._campo_codigo.visible
+            else None
+        )
 
-        if not nombre or not sku or not bodega_id:
+        if not nombre or not bodega_id:
             self._mostrar_snack(
-                "⚠️ Nombre, SKU y Bodega son obligatorios.", error=True
+                "⚠️ Nombre y Bodega son obligatorios.", error=True
+            )
+            self.page.update()
+            return
+
+        if self._campo_codigo.visible and not codigo:
+            self._mostrar_snack(
+                "⚠️ El código de fragancia es obligatorio para esta bodega.",
+                error=True,
             )
             self.page.update()
             return
 
         try:
-            precio = float(precio_raw) if precio_raw else 0.0
             stock = int(stock_raw) if stock_raw else 0
         except ValueError:
             self._mostrar_snack(
-                "⚠️ Precio y Stock deben ser valores numéricos.", error=True
+                "⚠️ El stock debe ser un valor numérico.", error=True
             )
             self.page.update()
             return
@@ -517,20 +533,16 @@ class _ProductosView(ft.Container):
             if self._producto_editando is None:
                 result = ProductosService.create(
                     nombre=nombre,
-                    descripcion=descripcion,
-                    sku=sku,
-                    precio=precio,
-                    stock_actual=stock,
                     bodega_id=bodega_id,
+                    codigo=codigo,
+                    stock_actual=stock,
                 )
             else:
                 result = ProductosService.update(
                     producto_id=self._producto_editando["id"],
                     nombre=nombre,
-                    descripcion=descripcion,
-                    sku=sku,
-                    precio=precio,
                     bodega_id=bodega_id,
+                    codigo=codigo,
                 )
             self._mostrar_snack(
                 result.get("message", ""), error=not result.get("success")
@@ -556,8 +568,53 @@ class _ProductosView(ft.Container):
         threading.Thread(target=_worker, daemon=True).start()
 
     # ─────────────────────────────────────────────────────────────────────────
-    # Importación masiva desde Excel/CSV
+    # Importación y exportación masiva desde Excel
     # ─────────────────────────────────────────────────────────────────────────
+
+    def _exportar_excel(self, e=None):
+        def _worker():
+            bodega_id = (
+                self._bodega_filtro
+                if self._bodega_filtro and self._bodega_filtro != "todas"
+                else None
+            )
+            result = ProductosService.exportar_excel(bodega_id=bodega_id)
+            self.page.run_task(self._on_exportar_excel, result)
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+    async def _on_exportar_excel(self, result: dict):
+        if not result.get("success"):
+            self._mostrar_snack(result.get("message", ""), error=True)
+            return
+
+        ruta = result.get("ruta", "")
+        es_plantilla = result.get("es_plantilla", False)
+
+        if self.page.web:
+            base_url = self.page.url or "http://localhost:8550"
+            if base_url.startswith("http"):
+                url = base_url.rstrip("/") + "/downloads/productos_export.xlsx"
+            else:
+                url = "http://localhost:8550/downloads/productos_export.xlsx"
+            try:
+                await self.page.launch_url(url)
+            except Exception:
+                self._mostrar_snack(
+                    "No se pudo abrir la URL de descarga.", error=True
+                )
+                return
+        else:
+            try:
+                os.startfile(ruta)
+            except Exception as ex:
+                self._mostrar_snack(f"No se pudo abrir el archivo: {ex}", error=True)
+                return
+
+        mensaje = (
+            "Plantilla descargada" if es_plantilla else "Productos exportados a Excel"
+        )
+        self._mostrar_snack(f"{mensaje}: {ruta}", error=False)
 
     def _abrir_dialogo_importar(self, e=None):
         self._import_bodega.value = None
