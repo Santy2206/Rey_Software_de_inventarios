@@ -21,6 +21,7 @@ from decimal import Decimal, ROUND_HALF_UP
 from psycopg2.extras import Json
 
 from src.core.local_db import get_cursor, run_query
+from src.services.bitacora_service import BitacoraService
 
 
 class _VentaError(Exception):
@@ -245,6 +246,19 @@ class VentasService:
                         Json({"descripcion": descripcion, "venta_id": str(venta_id)}),
                     ),
                 )
+
+            BitacoraService.registrar(
+                usuario_local,
+                "VENTA",
+                {
+                    "descripcion": descripcion,
+                    "venta_id": str(venta_id),
+                    "cliente_id": cliente_id,
+                    "cliente_nombre": cliente["nombre"],
+                    "total": str(total),
+                    "items": lineas,
+                },
+            )
 
             print(f" Venta {venta_id} registrada. Total: {total}")
             return {

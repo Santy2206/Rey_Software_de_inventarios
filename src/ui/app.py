@@ -37,13 +37,19 @@ def App(page: ft.Page):
             page.bgcolor = "#F5F5F5"
             page.vertical_alignment = ft.MainAxisAlignment.START
             page.horizontal_alignment = ft.CrossAxisAlignment.START
-            page.add(DashboardView(rol=kwargs.get("rol"), on_logout=handle_logout))
+            page.add(
+                DashboardView(
+                    rol=kwargs.get("rol"),
+                    user_id=kwargs.get("user_id"),
+                    on_logout=handle_logout,
+                )
+            )
         page.update()
 
     def handle_login(username: str, password: str):
         result = AuthService.login(username, password)
         if result["success"]:
-            navigate_to("dashboard", rol=result["rol"])
+            navigate_to("dashboard", rol=result["rol"], user_id=result["id"])
         else:
             page.snack_bar = ft.SnackBar(
                 content=ft.Text(result["message"]),

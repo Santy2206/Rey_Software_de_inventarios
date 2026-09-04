@@ -21,6 +21,7 @@ Reglas:
 import hashlib
 
 from src.core.local_db import run_query
+from src.services.bitacora_service import BitacoraService
 
 _current_usuario_id = None
 
@@ -68,6 +69,14 @@ class AuthService:
 
             if not _verificar_password(password_typed, user_data["password_hash"]):
                 print("❌ Contraseña incorrecta")
+                BitacoraService.registrar(
+                    user_data["id"],
+                    "LOGIN_FALLIDO",
+                    {
+                        "descripcion": f"Intento fallido de login: {username_typed}",
+                        "motivo": "Contraseña incorrecta",
+                    },
+                )
                 return {
                     "success": False,
                     "message": "Contraseña incorrecta",
@@ -75,10 +84,20 @@ class AuthService:
 
             _current_usuario_id = user_data["id"]
 
+            BitacoraService.registrar(
+                user_data["id"],
+                "LOGIN",
+                {
+                    "descripcion": f"Login exitoso: {username_typed}",
+                    "rol": user_data["rol"],
+                },
+            )
+
             print("🎉 Login exitoso!")
             return {
                 "success": True,
                 "message": f"Bienvenido {username_typed}",
+                "id": user_data["id"],
                 "rol": user_data["rol"],
             }
 

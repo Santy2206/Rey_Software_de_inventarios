@@ -1,157 +1,159 @@
-from datetime import datetime
+"""
+Servicio de Bitácora.
 
-# --- Lógica de Consola (CLI) opcional ---
-usuarios_nuevos = []
-contrasena_nueva = []
-ventas = []
-clientes = []
-bodegas = []
-descripciones = []
+Registra y consulta las acciones de los usuarios en la tabla 'bitacora'.
+Es una tabla de auditoría: cada operación relevante (login, CRUD, ventas,
+movimientos) debería dejar un registro aquí.
 
+Tabla:
+    bitacora (id, usuario_id, accion, detalles, fecha)
 
-def registrar_descripcion():
-    while True:
-        try:
-            descrip = str(input("Señor usuario: anexe una descripción breve: "))
-            descripciones.append(descrip)
-            print("Señor usuario, la descripción fue guardada exitosamente.")
-            break
-        except ValueError:
-            print(
-                "Señor usuario, su descripción no cumple con los parámetros establecidos."
-            )
+    - detalles es de tipo JSONB; se inserta usando psycopg2.extras.Json.
+    - fecha tiene DEFAULT CURRENT_TIMESTAMP.
 
+Mismo contrato que el resto de servicios:
+  - Cada función usa try/except
+  - Siempre retorna un diccionario con 'success' y 'message'
+  - Si hay datos, los incluye bajo la llave 'data'
+  - SIN importaciones de Flet — solo lógica pura
 
-def menu_usuarios():
-    print("Ingrese la opción deseada:")
-    print("1. Usuarios registrados")
-    print("2. Registrar usuario")
+Importante:
+    El registro de bitácora NUNCA debe ser bloqueante. Si falla, se
+    loguea el error pero no se propaga, para que la operación original
+    (venta, movimiento, etc.) no se vea afectada.
+"""
 
-    try:
-        opcion = int(input("Ingrese la opción deseada: "))
-        if opcion == 1:
-            for usr in usuarios_nuevos:
-                print("//// Usuarios registrados ////")
-                print("=", usr)
-        elif opcion == 2:
-            nuevo_usuario = str(input("Ingrese el nuevo usuario: "))
-            usuarios_nuevos.append(nuevo_usuario)
-            while True:
-                contrasena = input("Ingrese una contraseña alfanumérica: ")
-                if contrasena.isalnum():
-                    contrasena_nueva.append(contrasena)
-                    print("¡Contraseña alfanumérica registrada con éxito!")
-                    break
-                else:
-                    print("La contraseña no es alfanumérica, vuelva a intentarlo.")
-        else:
-            print("No existe la opción deseada.")
-    except ValueError:
-        print("La opción ingresada no es válida.")
+from datetime import date
+
+from psycopg2.extras import Json
+
+from src.core.local_db import run_query
 
 
-def obtener_fecha_hora():
-    fecha_final, hora_final = "", ""
-    while True:
-        fecha_input = input("Ingrese la fecha (DD/MM/AAAA): ")
-        try:
-            fecha_validada = datetime.strptime(fecha_input, "%d/%m/%Y").date()
-            fecha_final = fecha_validada.strftime("%d/%m/%Y")
-            break
-        except ValueError:
-            print("Fecha incorrecta. Use el formato Día/Mes/Año.")
-
-    while True:
-        hora_input = input("Ingrese la hora (HH:MM): ")
-        try:
-            hora_validada = datetime.strptime(hora_input, "%H:%M").time()
-            hora_final = hora_validada.strftime("%H:%M")
-            break
-        except ValueError:
-            print("Hora incorrecta. Use el formato de 24 horas.")
-
-    return [fecha_final, hora_final]
-
-
-def menu_acciones():
-    print("Ingrese la opción deseada:")
-    print("1. Agregar ventas")
-    print("2. Historial de ventas")
-    print("3. Ingresar clientes")
-    print("4. Historial de clientes")
-    print("5. Ingresar bodegas")
-    print("6. Historial de bodegas")
-
-    try:
-        opcion = int(input("Ingrese la opción deseada: "))
-
-        if opcion == 1:
-            vent = str(input("Ingrese el producto vendido: "))
-            ventas.append(vent)
-            print("Venta agregada.")
-
-        elif opcion == 2:
-            print("/////////// Historial de ventas ////////////")
-            for v in ventas:
-                print("=", v)
-
-        elif opcion == 3:
-            cly = str(input("Ingrese el cliente que va a comprar: "))
-            clientes.append(cly)
-            print("Cliente agregado.")
-
-        elif opcion == 4:
-            print("//// Historial de Clientes ////")
-            for c in clientes:
-                print("=", c)
-
-        elif opcion == 5:
-            try:
-                bod = int(input("Ingrese el número de bodegas que desea ingresar: "))
-                bodegas.append(bod)
-            except ValueError:
-                print("El número de bodegas no es válido.")
-
-        elif opcion == 6:
-            print("/// Historial de Bodegas ////")
-            for b in bodegas:
-                print("=", b)
-        else:
-            print("Opción no válida.")
-
-    except ValueError:
-        print("La opción no es válida.")
-
-
-# --- Servicio de Bitácora para la App (Flet/DB) ---
 class BitacoraService:
-    """Clase principal de la bitácora a usar en la app."""
-
-    def __init__(self, bitacora_repository=None):
-        self.bitacora_repository = bitacora_repository
-        self.registros = []
-
-    def registrar_evento(self, evento):
-        # Si existe repositorio local DB se registra allí
-        if self.bitacora_repository:
-            self.bitacora_repository.registrar_evento(evento)
-
-        # También lo guardamos en memoria local como respaldo/prueba
-        self.registros.append(evento)
-        print("Registro guardado correctamente")
-
-    def mostrar_bitacora(self):
-        for registro in self.registros:
-            print("----------------------")
-            print(f"Usuario: {registro.get('usuario', 'N/A')}")
-            print(f"Acción: {registro.get('accion', 'N/A')}")
-            print(f"Descripción: {registro.get('descripcion', 'N/A')}")
-            print("----------------------")
 
     @staticmethod
-    def get_all():
+    def get_all(
+        usuario_id: str = None,
+        accion: str = None,
+        fecha_inicio: date = None,
+        fecha_fin: date = None,
+    ):
         """
-        Método simulado para que bitacora_view.py no falle al arrancar.
-        Deberías reemplazar esto con un `run_query` hacia tu BD.
+        Trae los registros de bitácora, opcionalmente filtrados.
+
+        Parámetros:
+            usuario_id:  id del usuario que realizó la acción
+            accion:      tipo de acción, ej: "LOGIN", "BODEGA", "VENTA"
+            fecha_inicio: fecha mínima (date)
+            fecha_fin:    fecha máxima (date)
+
+        Retorna:
+            dict: contrato estándar; 'data' es la lista de registros.
         """
-        return {"success": True, "message": "Datos obtenidos", "data": []}
+        print("--- Trayendo bitácora ---")
+        try:
+            condiciones = []
+            parametros = []
+
+            if usuario_id:
+                condiciones.append("b.usuario_id = %s")
+                parametros.append(usuario_id)
+            if accion:
+                condiciones.append("b.accion = %s")
+                parametros.append(accion)
+            if fecha_inicio:
+                condiciones.append("b.fecha::date >= %s")
+                parametros.append(fecha_inicio)
+            if fecha_fin:
+                condiciones.append("b.fecha::date <= %s")
+                parametros.append(fecha_fin)
+
+            where = ""
+            if condiciones:
+                where = "WHERE " + " AND ".join(condiciones)
+
+            data = run_query(
+                f"""
+                SELECT b.*,
+                       u.name AS usuario,
+                       u.rol
+                FROM bitacora b
+                LEFT JOIN usuarios u ON b.usuario_id = u.id
+                {where}
+                ORDER BY b.fecha DESC
+                """,
+                tuple(parametros) if parametros else (),
+            )
+
+            if not data:
+                return {
+                    "success": True,
+                    "message": "No hay registros en la bitácora",
+                    "data": [],
+                }
+
+            print(f" Se encontraron {len(data)} registro(s) en bitácora")
+            return {
+                "success": True,
+                "message": "Bitácora obtenida",
+                "data": data,
+            }
+
+        except Exception as e:
+            error_msg = str(e)
+            print(f" Error en BitacoraService.get_all: {error_msg}")
+            return {
+                "success": False,
+                "message": f"Error al obtener bitácora: {error_msg}",
+                "data": [],
+            }
+
+    @staticmethod
+    def registrar(usuario_id: str, accion: str, detalle: dict):
+        """
+        Inserta un nuevo registro en la bitácora.
+
+        Parámetros:
+            usuario_id: id del usuario que realiza la acción
+            accion:     etiqueta corta, ej: "LOGIN", "BODEGA", "PRODUCTO"
+            detalle:    diccionario con información adicional (descripción,
+                        ids afectados, etc.)
+
+        Retorna:
+            dict: contrato estándar; 'data' contiene el registro insertado.
+        """
+        print(f"--- Registrando en bitácora: {accion} ---")
+        try:
+            detalle_db = Json(detalle) if detalle is not None else None
+
+            registro = run_query(
+                """
+                INSERT INTO bitacora (usuario_id, accion, detalles)
+                VALUES (%s, %s, %s)
+                RETURNING *
+                """,
+                (usuario_id, accion, detalle_db),
+                fetch_one=True,
+            )
+
+            if not registro:
+                return {
+                    "success": False,
+                    "message": "No se pudo registrar la bitácora",
+                }
+
+            print(f" Bitácora registrada: {accion}")
+            return {
+                "success": True,
+                "message": "Bitácora registrada",
+                "data": registro,
+            }
+
+        except Exception as e:
+            error_msg = str(e)
+            print(f" Error en BitacoraService.registrar: {error_msg}")
+            return {
+                "success": False,
+                "message": f"Error al registrar bitácora: {error_msg}",
+            }

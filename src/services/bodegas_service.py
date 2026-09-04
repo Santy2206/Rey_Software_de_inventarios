@@ -12,10 +12,22 @@ El id se genera automáticamente en la base de datos (DEFAULT gen_random_uuid())
 así que nunca lo mandamos nosotros al hacer INSERT.
 
 Tabla:
-    bodegas (id, nombre, tipo, created_at, dirty, synced_at)
+    bodegas (id, nombre, ubicacion, creado_en)
 """
 
 from src.core.local_db import run_query
+from src.services.auth_service import AuthService
+from src.services.bitacora_service import BitacoraService
+
+
+def _registrar_bitacora_bodegas(detalle: dict):
+    """Registra en bitácora sin afectar la operación principal."""
+    try:
+        usuario_id = AuthService.get_usuario_id()
+        if usuario_id:
+            BitacoraService.registrar(usuario_id, "BODEGA", detalle)
+    except Exception as e:
+        print(f" Error al registrar bitácora de bodega: {e}")
 
 
 class BodegasService:
@@ -101,6 +113,15 @@ class BodegasService:
             if not bodega:
                 return {"success": False, "message": "No se pudo crear la bodega"}
 
+            _registrar_bitacora_bodegas(
+                {
+                    "descripcion": f"Bodega '{nombre}' creada",
+                    "bodega_id": bodega["id"],
+                    "nombre": nombre,
+                    "tipo": tipo,
+                }
+            )
+
             print(f"Bodega '{nombre}' creada con éxito")
             return {
                 "success": True,
@@ -142,6 +163,15 @@ class BodegasService:
                     "message": "Bodega no encontrada para actualizar",
                 }
 
+            _registrar_bitacora_bodegas(
+                {
+                    "descripcion": f"Bodega '{nombre}' actualizada",
+                    "bodega_id": bodega_id,
+                    "nombre": nombre,
+                    "tipo": tipo,
+                }
+            )
+
             print(f" Bodega actualizada con éxito")
             return {
                 "success": True,
@@ -178,6 +208,13 @@ class BodegasService:
                     "success": False,
                     "message": "Bodega no encontrada para eliminar",
                 }
+
+            _registrar_bitacora_bodegas(
+                {
+                    "descripcion": "Bodega eliminada",
+                    "bodega_id": bodega_id,
+                }
+            )
 
             print(f" Bodega eliminada con éxito")
             return {"success": True, "message": "Bodega eliminada con éxito"}

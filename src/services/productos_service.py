@@ -19,6 +19,18 @@ Mismo contrato de siempre:
 """
 
 from src.core.local_db import run_query
+from src.services.auth_service import AuthService
+from src.services.bitacora_service import BitacoraService
+
+
+def _registrar_bitacora_productos(detalle: dict):
+    """Registra en bitácora sin afectar la operación principal."""
+    try:
+        usuario_id = AuthService.get_usuario_id()
+        if usuario_id:
+            BitacoraService.registrar(usuario_id, "PRODUCTO", detalle)
+    except Exception as e:
+        print(f" Error al registrar bitácora de producto: {e}")
 
 
 class ProductosService:
@@ -153,6 +165,16 @@ class ProductosService:
             if not producto:
                 return {"success": False, "message": "No se pudo crear el producto"}
 
+            _registrar_bitacora_productos(
+                {
+                    "descripcion": f"Producto '{nombre}' creado",
+                    "producto_id": producto["id"],
+                    "nombre": nombre,
+                    "sku": sku,
+                    "bodega_id": bodega_id,
+                }
+            )
+
             print(f" Producto '{nombre}' creado con éxito")
             return {
                 "success": True,
@@ -213,6 +235,16 @@ class ProductosService:
                     "message": "Producto no encontrado para actualizar",
                 }
 
+            _registrar_bitacora_productos(
+                {
+                    "descripcion": f"Producto '{nombre}' actualizado",
+                    "producto_id": producto_id,
+                    "nombre": nombre,
+                    "sku": sku,
+                    "bodega_id": bodega_id,
+                }
+            )
+
             print(f" Producto actualizado con éxito")
             return {
                 "success": True,
@@ -249,6 +281,13 @@ class ProductosService:
                     "success": False,
                     "message": "Producto no encontrado para eliminar",
                 }
+
+            _registrar_bitacora_productos(
+                {
+                    "descripcion": "Producto eliminado",
+                    "producto_id": producto_id,
+                }
+            )
 
             print(f" Producto eliminado con éxito")
             return {"success": True, "message": "Producto eliminado con éxito"}

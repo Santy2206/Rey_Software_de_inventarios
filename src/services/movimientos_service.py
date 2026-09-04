@@ -14,12 +14,14 @@ Sigue el mismo patrón que el resto de servicios:
 Tabla local:
     movimientos (id, producto_id, bodega_id, usuario_id, tipo, cantidad, fecha, motivo)
 
-    tipo solo puede ser: "entrada", "salida", "ajuste", "baja"
+    tipo solo puede ser: "ingreso", "egreso", "transferencia"
+    (según el CHECK CONSTRAINT movimientos_tipo_check de PostgreSQL)
 """
 
 from src.core.local_db import get_cursor, run_query
+from src.services.bitacora_service import BitacoraService
 
-TIPOS_VALIDOS = ["entrada", "salida", "ajuste", "baja"]
+TIPOS_VALIDOS = ["ingreso", "egreso", "transferencia"]
 
 
 class MovimientosService:
@@ -140,7 +142,7 @@ class MovimientosService:
             stock_actual = producto["stock_actual"]
             nombre_producto = producto["nombre"]
 
-            if tipo == "entrada":
+            if tipo == "ingreso":
                 nuevo_stock = stock_actual + cantidad
             else:
                 if stock_actual < cantidad:
@@ -171,6 +173,21 @@ class MovimientosService:
         )
         print(f"   Stock anterior: {stock_actual} → Stock nuevo: {nuevo_stock}")
 
+        BitacoraService.registrar(
+            usuario_id,
+            "MOVIMIENTO",
+            {
+                "descripcion": f"Movimiento {tipo} de {cantidad} unidades de '{nombre_producto}'",
+                "producto_id": producto_id,
+                "bodega_id": bodega_id,
+                "tipo": tipo,
+                "cantidad": cantidad,
+                "motivo": motivo,
+                "stock_anterior": stock_actual,
+                "stock_nuevo": nuevo_stock,
+            },
+        )
+
         return {
             "success": True,
             "message": f"Movimiento registrado. Stock actualizado a {nuevo_stock}",
@@ -184,6 +201,7 @@ class MovimientosService:
         """
         Registra la ENTRADA de productos a una bodega (aumenta el stock).
         Ej: llegó una compra nueva de 50 unidades de perfume.
+        En la base de datos el tipo del movimiento es "ingreso".
 
         Parámetros:
             producto_id: id del producto que entra
@@ -195,7 +213,7 @@ class MovimientosService:
         print(f"--- Registrando ENTRADA de {cantidad} unidades ---")
         try:
             return MovimientosService._registrar_movimiento(
-                producto_id, bodega_id, "entrada", cantidad, motivo, usuario_id
+                producto_id, bodega_id, "ingreso", cantidad, motivo, usuario_id
             )
         except Exception as e:
             error_msg = str(e)
@@ -212,6 +230,7 @@ class MovimientosService:
         """
         Registra la SALIDA de productos de una bodega (reduce el stock).
         Ej: se retiraron 10 unidades para un evento.
+        En la base de datos el tipo del movimiento es "egreso".
 
         Parámetros:
             producto_id: id del producto que sale
@@ -223,7 +242,7 @@ class MovimientosService:
         print(f"--- Registrando SALIDA de {cantidad} unidades ---")
         try:
             return MovimientosService._registrar_movimiento(
-                producto_id, bodega_id, "salida", cantidad, motivo, usuario_id
+                producto_id, bodega_id, "egreso", cantidad, motivo, usuario_id
             )
         except Exception as e:
             error_msg = str(e)
@@ -240,6 +259,7 @@ class MovimientosService:
         """
         Registra un AJUSTE MANUAL por faltantes o sobrantes (reduce el stock).
         Ej: al hacer inventario físico se encontraron 5 unidades menos.
+        En la base de datos el tipo del movimiento es "egreso".
 
         Parámetros:
             producto_id: id del producto a ajustar
@@ -251,7 +271,7 @@ class MovimientosService:
         print(f"--- Registrando AJUSTE de {cantidad} unidades ---")
         try:
             return MovimientosService._registrar_movimiento(
-                producto_id, bodega_id, "ajuste", cantidad, motivo, usuario_id
+                producto_id, bodega_id, "egreso", cantidad, motivo, usuario_id
             )
         except Exception as e:
             error_msg = str(e)
@@ -268,6 +288,7 @@ class MovimientosService:
         """
         Registra una BAJA por productos dañados o caducados (reduce el stock).
         Ej: 3 frascos de perfume se rompieron durante el almacenamiento.
+        En la base de datos el tipo del movimiento es "egreso".
 
         Parámetros:
             producto_id: id del producto dado de baja
@@ -279,7 +300,7 @@ class MovimientosService:
         print(f"--- Registrando BAJA de {cantidad} unidades ---")
         try:
             return MovimientosService._registrar_movimiento(
-                producto_id, bodega_id, "baja", cantidad, motivo, usuario_id
+                producto_id, bodega_id, "egreso", cantidad, motivo, usuario_id
             )
         except Exception as e:
             error_msg = str(e)

@@ -11,6 +11,7 @@ from src.ui.components.cards import dashboard_card
 from src.services.productos_service import ProductosService
 from src.services.bodegas_service import BodegasService
 from src.services.ventas_service import VentasService
+from src.sync.sync_service import SyncService
 
 
 def _metric_count(result: dict) -> str:
@@ -73,6 +74,16 @@ def _DashboardHomeView():
                     dashboard_card("CLIENTES", "0", "Clientes registrados"),
                 ],
             ),
+            ft.ElevatedButton(
+                "Sincronizar ahora",
+                icon=ft.Icons.CLOUD_SYNC,
+                bgcolor="#2196F3",
+                color="white",
+                height=45,
+                on_click=lambda _: SyncService.sync_pendientes_background(
+                    callback=lambda res: print("Sync:", res)
+                ),
+            ),
         ],
     )
 
@@ -89,7 +100,23 @@ VIEWS = {
 }
 
 
-def DashboardView(rol: str, on_logout):
+def DashboardView(rol: str, user_id: str | None, on_logout):
+    """
+    Vista principal del dashboard.
+
+    Parámetros:
+        rol:      rol del usuario autenticado (ej: "admin", "vendedor").
+        user_id:  id de la fila en la tabla 'usuarios' (UUID local).
+                  Se propaga a las vistas hijas que lo necesiten para
+                  registrar movimientos, ventas o bitácora. Las vistas
+                  actuales (movimientos_view, ventas_view) obtienen este
+                  mismo id a través de AuthService.get_usuario_id().
+        on_logout: callback para cerrar sesión.
+    """
+
+    # Estado compartido disponible para las vistas hijas.
+    _dashboard_state = {"user_id": user_id, "rol": rol}
+
     content_area = ft.Column(
         expand=True,
         spacing=20,
