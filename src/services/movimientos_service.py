@@ -2,22 +2,22 @@
 Servicio de Movimientos de Inventario.
 
 Registra TODA entrada, salida, ajuste o baja de productos en las bodegas.
-Este servicio hace DOS cosas al mismo tiempo en cada operación:
+Este servicio hace DOS cosas atómicas en cada operación:
   1. Inserta un registro en la tabla 'movimientos' (historial/trazabilidad)
   2. Actualiza el stock del producto en la tabla 'productos'
 
-Sigue el mismo patrón que auth_service.py:
+Sigue el mismo patrón que el resto de servicios:
   - Cada función usa try/except
   - Siempre retorna un diccionario con 'success' y 'message'
   - SIN importaciones de Flet — solo lógica pura
 
-Tabla esperada en Supabase:
-    movimientos (id, producto_id, bodega_id, tipo, cantidad, motivo, fecha, usuario_id)
+Tabla local:
+    movimientos (id, producto_id, bodega_id, usuario_id, tipo, cantidad, fecha, motivo)
 
     tipo solo puede ser: "entrada", "salida", "ajuste", "baja"
 """
 
-from src.core.supabase_client import supabase
+from src.core.local_db import get_cursor, run_query
 
 TIPOS_VALIDOS = ["entrada", "salida", "ajuste", "baja"]
 
@@ -32,23 +32,32 @@ class MovimientosService:
         """
         print("--- Trayendo todos los movimientos ---")
         try:
-            res = (
-                supabase.table("movimientos")
-                # ✅ agregado join a usuarios(username) para poder mostrar
-                #    quién registró cada movimiento en la vista de historial
-                .select("*, productos(nombre), bodegas(nombre), usuarios(username)")
-                .order("fecha", desc=True)
-                .execute()
-            )
+            data = run_query("""
+                SELECT
+                    m.*,
+                    p.nombre AS producto_nombre,
+                    b.nombre AS bodega_nombre,
+                    u.name AS usuario_name
+                FROM movimientos m
+                LEFT JOIN productos p ON m.producto_id = p.id
+                LEFT JOIN bodegas b ON m.bodega_id = b.id
+                LEFT JOIN usuarios u ON m.usuario_id = u.id
+                ORDER BY m.fecha DESC
+            """)
 
-            if not res.data:
-                return {"success": False, "message": "No hay movimientos registrados"}
+            if not data:
+                print("⚠️ No hay movimientos registrados aún")
+                return {
+                    "success": True,
+                    "message": "No hay movimientos registrados",
+                    "data": [],
+                }
 
-            print(f"✅ Se encontraron {len(res.data)} movimiento(s)")
+            print(f"✅ Se encontraron {len(data)} movimiento(s)")
             return {
                 "success": True,
                 "message": "Movimientos obtenidos",
-                "data": res.data,
+                "data": data,
             }
 
         except Exception as e:
@@ -67,24 +76,22 @@ class MovimientosService:
         """
         print(f"--- Trayendo movimientos del producto: {producto_id} ---")
         try:
-            res = (
-                supabase.table("movimientos")
-                .select("*")
-                .eq("producto_id", producto_id)
-                .order("fecha", desc=True)
-                .execute()
+            data = run_query(
+                "SELECT * FROM movimientos WHERE producto_id = %s ORDER BY fecha DESC",
+                (producto_id,),
             )
 
-            if not res.data:
+            if not data:
                 return {
-                    "success": False,
+                    "success": True,
                     "message": "No hay movimientos para este producto",
+                    "data": [],
                 }
 
             return {
                 "success": True,
                 "message": "Movimientos obtenidos",
-                "data": res.data,
+                "data": data,
             }
 
         except Exception as e:
@@ -106,55 +113,58 @@ class MovimientosService:
     ):
         """
         Función interna (privada) que hace el trabajo real.
+
         El guión bajo al inicio (_) es la convención en Python para decir
         "este método es solo para uso interno de esta clase".
 
-        Hace dos pasos:
+        Hace dos pasos atómicos dentro de una transacción:
           Paso 1: Verifica que el producto existe y tiene stock suficiente
           Paso 2: Inserta el movimiento Y actualiza el stock al mismo tiempo
         """
+        if tipo not in TIPOS_VALIDOS:
+            return {
+                "success": False,
+                "message": f"Tipo de movimiento no válido: {tipo}",
+            }
 
-        producto_res = (
-            supabase.table("productos")
-            .select("id, nombre, stock")
-            .eq("id", producto_id)
-            .maybe_single()
-            .execute()
-        )
+        with get_cursor() as cur:
+            cur.execute(
+                "SELECT id, nombre, stock_actual FROM productos WHERE id = %s FOR UPDATE",
+                (producto_id,),
+            )
+            producto = cur.fetchone()
 
-        if not producto_res.data:
-            return {"success": False, "message": "Producto no encontrado"}
+            if not producto:
+                return {"success": False, "message": "Producto no encontrado"}
 
-        stock_actual = producto_res.data["stock"]
-        nombre_producto = producto_res.data["nombre"]
+            stock_actual = producto["stock_actual"]
+            nombre_producto = producto["nombre"]
 
-        if tipo == "entrada":
-            nuevo_stock = stock_actual + cantidad
-        else:
-            if stock_actual < cantidad:
-                return {
-                    "success": False,
-                    "message": f"Stock insuficiente. Disponible: {stock_actual}, solicitado: {cantidad}",
-                }
-            nuevo_stock = stock_actual - cantidad
+            if tipo == "entrada":
+                nuevo_stock = stock_actual + cantidad
+            else:
+                if stock_actual < cantidad:
+                    return {
+                        "success": False,
+                        "message": f"Stock insuficiente. Disponible: {stock_actual}, solicitado: {cantidad}",
+                    }
+                nuevo_stock = stock_actual - cantidad
 
-        nuevo_movimiento = {
-            "producto_id": producto_id,
-            "bodega_id": bodega_id,
-            "tipo": tipo,
-            "cantidad": cantidad,
-            "motivo": motivo,
-            "usuario_id": usuario_id,
-        }
+            cur.execute(
+                """
+                INSERT INTO movimientos
+                    (producto_id, bodega_id, usuario_id, tipo, cantidad, motivo, fecha)
+                VALUES (%s, %s, %s, %s, %s, %s, NOW())
+                RETURNING *
+                """,
+                (producto_id, bodega_id, usuario_id, tipo, cantidad, motivo),
+            )
+            movimiento = cur.fetchone()
 
-        mov_res = supabase.table("movimientos").insert(nuevo_movimiento).execute()
-
-        if not mov_res.data:
-            return {"success": False, "message": "No se pudo registrar el movimiento"}
-
-        supabase.table("productos").update({"stock": nuevo_stock}).eq(
-            "id", producto_id
-        ).execute()
+            cur.execute(
+                "UPDATE productos SET stock_actual = %s WHERE id = %s",
+                (nuevo_stock, producto_id),
+            )
 
         print(
             f"✅ Movimiento registrado: {tipo} de {cantidad} unidades de '{nombre_producto}'"
@@ -164,7 +174,7 @@ class MovimientosService:
         return {
             "success": True,
             "message": f"Movimiento registrado. Stock actualizado a {nuevo_stock}",
-            "data": mov_res.data[0],
+            "data": movimiento,
         }
 
     @staticmethod
