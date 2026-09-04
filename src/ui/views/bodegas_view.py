@@ -1,6 +1,8 @@
 import threading
 import flet as ft
 from src.services.bodegas_service import BodegasService
+from src.ui.components.status_header import StatusHeader
+from src.ui.components.page_header import PageHeader
 
 _CARD_COLORS = ["#f5b400", "#c2185b", "#2563eb", "#16a34a", "#7c3aed"]
 
@@ -50,6 +52,9 @@ class _BodegasView(ft.Container):
             hint_text='Ej: "Fragancias", "General"',
             border_radius=10,
         )
+
+        # ── Barra de estado
+        self._status_header = StatusHeader()
 
         # ── Diálogo modal
         self._dialog = ft.AlertDialog(
@@ -107,6 +112,7 @@ class _BodegasView(ft.Container):
         self.page.update()
 
         # FIX 3 — cargar datos en segundo plano para no bloquear la UI
+        self._status_header.load(self.page)
         threading.Thread(target=self._cargar_bodegas, daemon=True).start()
 
     # ─────────────────────────────────────────────────────────────────────────
@@ -155,55 +161,20 @@ class _BodegasView(ft.Container):
     # ─────────────────────────────────────────────────────────────────────────
 
     def _header_section(self):
-        return ft.Row(
-            alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
-            controls=[
-                ft.Column(
-                    spacing=2,
-                    controls=[
-                        ft.Text(
-                            "Bodegas", size=24, weight=ft.FontWeight.BOLD, color="#222"
-                        ),
-                        ft.Text(
-                            "Gestiona todas las bodegas del sistema",
-                            size=12,
-                            color="grey",
-                        ),
-                    ],
-                ),
-                ft.Row(
-                    spacing=10,
-                    controls=[
-                        ft.Container(
-                            bgcolor="#e8fff0",
-                            border_radius=20,
-                            padding=ft.padding.symmetric(horizontal=12, vertical=8),
-                            content=ft.Row(
-                                spacing=5,
-                                controls=[
-                                    ft.Icon(
-                                        ft.Icons.CHECK_CIRCLE, size=16, color="green"
-                                    ),
-                                    ft.Text(
-                                        "Online",
-                                        color="green",
-                                        size=12,
-                                        weight=ft.FontWeight.BOLD,
-                                    ),
-                                ],
-                            ),
-                        ),
-                        ft.ElevatedButton(
-                            "Crear Bodega",
-                            icon=ft.Icons.ADD,
-                            bgcolor="#9eff8f",
-                            color="black",
-                            style=ft.ButtonStyle(
-                                shape=ft.RoundedRectangleBorder(radius=10)
-                            ),
-                            on_click=self._abrir_dialogo_crear,
-                        ),
-                    ],
+        return PageHeader(
+            title="Bodegas",
+            subtitle="Gestiona todas las bodegas del sistema",
+            status_control=self._status_header.control,
+            action_buttons=[
+                ft.ElevatedButton(
+                    "Crear Bodega",
+                    icon=ft.Icons.ADD,
+                    bgcolor="#9eff8f",
+                    color="black",
+                    style=ft.ButtonStyle(
+                        shape=ft.RoundedRectangleBorder(radius=10)
+                    ),
+                    on_click=self._abrir_dialogo_crear,
                 ),
             ],
         )

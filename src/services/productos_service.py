@@ -13,10 +13,14 @@ Mismo contrato de siempre:
   - Si hay datos, los incluye bajo la llave 'data'
   - SIN importaciones de Flet — solo lógica pura
 
-⚠️ productos_view.py sigue siendo un stub — cuando la construyan,
+productos_view.py sigue siendo un stub — cuando la construyan,
    usen estos nombres de parámetro/columna (no 'tipo', 'funcion',
    'unidad_medida' ni 'stock', que no existen en esta tabla).
 """
+
+import os
+
+import pandas as pd
 
 from src.core.local_db import run_query
 from src.services.auth_service import AuthService
@@ -51,10 +55,10 @@ class ProductosService:
                 """)
 
             if not data:
-                print("⚠️ No hay productos registrados aún")
+                print("No hay productos registrados aún")
                 return {"success": False, "message": "No hay productos registrados"}
 
-            print(f"✅ Se encontraron {len(data)} producto(s)")
+            print(f"Se encontraron {len(data)} producto(s)")
             return {"success": True, "message": "Productos obtenidos", "data": data}
 
         except Exception as e:
@@ -83,7 +87,7 @@ class ProductosService:
             if not data:
                 return {"success": False, "message": "No hay productos en esta bodega"}
 
-            print(f"✅ Se encontraron {len(data)} producto(s) en la bodega")
+            print(f"Se encontraron {len(data)} producto(s) en la bodega")
             return {"success": True, "message": "Productos obtenidos", "data": data}
 
         except Exception as e:
@@ -118,7 +122,7 @@ class ProductosService:
             if not producto:
                 return {"success": False, "message": "Producto no encontrado"}
 
-            print(f"✅ Producto encontrado: {producto['nombre']}")
+            print(f"Producto encontrado: {producto['nombre']}")
             return {"success": True, "message": "Producto encontrado", "data": producto}
 
         except Exception as e:
@@ -298,4 +302,177 @@ class ProductosService:
             return {
                 "success": False,
                 "message": f"Error al eliminar producto: {error_msg}",
+            }
+
+    @staticmethod
+    def importar_excel(ruta_archivo: str, bodega_id: str):
+        """
+        Importa productos desde un archivo Excel (.xlsx) o CSV (.csv)
+        a la bodega indicada.
+
+        Columnas aceptadas (no importa mayúsculas/minúsculas ni tildes):
+            - nombre      (o 'producto', 'name')
+            - descripcion (o 'description', 'desc')
+            - sku         (o 'referencia', 'ref', 'codigo', 'code')
+            - precio      (o 'price', 'valor', 'costo')
+            - stock       (o 'stock_actual', 'cantidad', 'quantity', 'qty')
+
+        Retorna:
+            dict: contrato estándar; 'data' contiene un resumen con
+                  creados, errores y lista de mensajes por fila.
+        """
+        print(f"--- Importando productos desde: {ruta_archivo} ---")
+        try:
+            if not ruta_archivo or not os.path.exists(ruta_archivo):
+                return {
+                    "success": False,
+                    "message": "No se encontró el archivo indicado",
+                }
+
+            if not bodega_id:
+                return {
+                    "success": False,
+                    "message": "Debe seleccionar una bodega destino",
+                }
+
+            extension = os.path.splitext(ruta_archivo)[1].lower()
+            if extension == ".csv":
+                df = pd.read_csv(ruta_archivo, dtype=str)
+            elif extension in (".xlsx", ".xls"):
+                df = pd.read_excel(ruta_archivo, dtype=str)
+            else:
+                return {
+                    "success": False,
+                    "message": "Formato no soportado. Use .xlsx o .csv",
+                }
+
+            if df.empty:
+                return {
+                    "success": False,
+                    "message": "El archivo está vacío o no tiene datos",
+                }
+
+            # Normalizar nombres de columnas
+            def _normalizar(col: str) -> str:
+                return (
+                    col.lower()
+                    .strip()
+                    .replace("á", "a")
+                    .replace("é", "e")
+                    .replace("í", "i")
+                    .replace("ó", "o")
+                    .replace("ú", "u")
+                    .replace("ñ", "n")
+                )
+
+            columnas = {_normalizar(c): c for c in df.columns}
+
+            mapeos = {
+                "nombre": ["nombre", "producto", "name"],
+                "descripcion": ["descripcion", "description", "desc"],
+                "sku": ["sku", "referencia", "ref", "codigo", "code"],
+                "precio": ["precio", "price", "valor", "costo"],
+                "stock_actual": [
+                    "stock",
+                    "stock_actual",
+                    "cantidad",
+                    "quantity",
+                    "qty",
+                ],
+            }
+
+            def _buscar_columna(nombres):
+                for n in nombres:
+                    if n in columnas:
+                        return columnas[n]
+                return None
+
+            col_nombre = _buscar_columna(mapeos["nombre"])
+            col_descripcion = _buscar_columna(mapeos["descripcion"])
+            col_sku = _buscar_columna(mapeos["sku"])
+            col_precio = _buscar_columna(mapeos["precio"])
+            col_stock = _buscar_columna(mapeos["stock_actual"])
+
+            if not col_nombre:
+                return {
+                    "success": False,
+                    "message": "No se encontró una columna de nombre en el archivo",
+                }
+
+            creados = 0
+            errores = 0
+            detalle = []
+
+            for _, fila in df.iterrows():
+                nombre = (fila.get(col_nombre) or "").strip()
+                if not nombre:
+                    errores += 1
+                    detalle.append("Fila con nombre vacío omitida")
+                    continue
+
+                sku_raw = fila.get(col_sku) if col_sku else None
+                sku = (str(sku_raw).strip() if pd.notna(sku_raw) else "")
+
+                descripcion_raw = fila.get(col_descripcion) if col_descripcion else None
+                descripcion = (
+                    str(descripcion_raw).strip()
+                    if pd.notna(descripcion_raw)
+                    else None
+                )
+
+                precio_raw = fila.get(col_precio) if col_precio else 0
+                try:
+                    precio = float(str(precio_raw).replace(",", "").strip() or 0)
+                except ValueError:
+                    precio = 0.0
+
+                stock_raw = fila.get(col_stock) if col_stock else 0
+                try:
+                    stock = int(str(stock_raw).replace(",", "").strip() or 0)
+                except ValueError:
+                    stock = 0
+
+                resultado = ProductosService.create(
+                    nombre=nombre,
+                    bodega_id=bodega_id,
+                    descripcion=descripcion,
+                    sku=sku,
+                    precio=precio,
+                    stock_actual=stock,
+                )
+
+                if resultado.get("success"):
+                    creados += 1
+                    detalle.append(f"Creado: {nombre}")
+                else:
+                    errores += 1
+                    detalle.append(f"Error en '{nombre}': {resultado.get('message')}")
+
+            _registrar_bitacora_productos(
+                {
+                    "descripcion": f"Importación masiva: {creados} productos creados, {errores} errores",
+                    "bodega_id": bodega_id,
+                    "archivo": ruta_archivo,
+                }
+            )
+
+            return {
+                "success": True,
+                "message": (
+                    f"Importación finalizada: {creados} creados, "
+                    f"{errores} errores"
+                ),
+                "data": {
+                    "creados": creados,
+                    "errores": errores,
+                    "detalle": detalle,
+                },
+            }
+
+        except Exception as e:
+            error_msg = str(e)
+            print(f" Error en ProductosService.importar_excel: {error_msg}")
+            return {
+                "success": False,
+                "message": f"Error al importar productos: {error_msg}",
             }

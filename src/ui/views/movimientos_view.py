@@ -28,6 +28,8 @@ from src.services.movimientos_service import MovimientosService
 from src.services.bodegas_service import BodegasService
 from src.services.productos_service import ProductosService
 from src.services.auth_service import AuthService
+from src.ui.components.status_header import StatusHeader
+from src.ui.components.page_header import PageHeader
 
 _COLOR_TIPO = {
     "Entrada": ("#DCFCE7", "#15803D"),
@@ -62,6 +64,8 @@ class _MovimientosView(ft.Container):
         self._productos: list[dict] = []
         self._movimientos: list[dict] = []
 
+        self._status_header = StatusHeader()
+
         self._snackbar = ft.SnackBar(content=ft.Text(""), show_close_icon=True)
 
         # ── Filtros de historial ────────────────────────────────────────
@@ -69,7 +73,7 @@ class _MovimientosView(ft.Container):
             label="Producto",
             width=250,
             options=[ft.DropdownOption(key="todas", text="Todas")],
-            on_change=self._aplicar_filtros,
+            on_select=self._aplicar_filtros,
         )
         self._filtro_fecha_inicio = ft.TextField(
             label="Desde",
@@ -129,6 +133,7 @@ class _MovimientosView(ft.Container):
     def did_mount(self):
         self.page.overlay.append(self._snackbar)
         self.page.update()
+        self._status_header.load(self.page)
         threading.Thread(target=self._cargar_datos_iniciales, daemon=True).start()
 
     def _cargar_datos_iniciales(self):
@@ -173,47 +178,10 @@ class _MovimientosView(ft.Container):
     # ============================================================
 
     def _header_section(self):
-        return ft.Row(
-            alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
-            controls=[
-                ft.Column(
-                    spacing=2,
-                    controls=[
-                        ft.Text(
-                            "Movimientos",
-                            size=24,
-                            weight=ft.FontWeight.BOLD,
-                            color="#222",
-                        ),
-                        ft.Text(
-                            "Entradas, salidas, ajustes y bajas de productos",
-                            size=12,
-                            color="grey",
-                        ),
-                    ],
-                ),
-                ft.Container(
-                    bgcolor="#E8FFF0",
-                    border_radius=20,
-                    padding=ft.padding.symmetric(horizontal=12, vertical=8),
-                    content=ft.Row(
-                        spacing=5,
-                        controls=[
-                            ft.Icon(
-                                ft.Icons.CHECK_CIRCLE,
-                                color="green",
-                                size=16,
-                            ),
-                            ft.Text(
-                                "Online",
-                                color="green",
-                                size=12,
-                                weight=ft.FontWeight.BOLD,
-                            ),
-                        ],
-                    ),
-                ),
-            ],
+        return PageHeader(
+            title="Movimientos",
+            subtitle="Entradas, salidas, ajustes y bajas de productos",
+            status_control=self._status_header.control,
         )
 
     # ============================================================
@@ -221,16 +189,16 @@ class _MovimientosView(ft.Container):
     # ============================================================
 
     def _form_section(self):
-        self.tipo = ft.Tabs(
-            selected_index=0,
-            animation_duration=300,
-            on_change=self._actualizar_tipo,
-            tabs=[
-                ft.Tab(text="Entrada", icon=ft.Icons.DOWNLOAD),
-                ft.Tab(text="Salida", icon=ft.Icons.UPLOAD),
-                ft.Tab(text="Ajuste", icon=ft.Icons.TUNE),
-                ft.Tab(text="Baja", icon=ft.Icons.DELETE),
+        self.tipo = ft.Dropdown(
+            label="Tipo de movimiento *",
+            value="ingreso",
+            options=[
+                ft.DropdownOption(key="ingreso", text="Entrada"),
+                ft.DropdownOption(key="egreso", text="Salida"),
+                ft.DropdownOption(key="ajuste", text="Ajuste"),
+                ft.DropdownOption(key="baja", text="Baja"),
             ],
+            on_select=self._actualizar_tipo,
         )
 
         self.bodega = ft.Dropdown(label="Bodega *", expand=True, options=[])
@@ -277,15 +245,13 @@ class _MovimientosView(ft.Container):
         )
 
     def _actualizar_tipo(self, e=None):
-        indice = self.tipo.selected_index
-
-        textos = [
-            ("Registrar Entrada", ft.Icons.DOWNLOAD, "#16A34A"),
-            ("Registrar Salida", ft.Icons.UPLOAD, "#DC2626"),
-            ("Registrar Ajuste", ft.Icons.TUNE, "#D97706"),
-            ("Registrar Baja", ft.Icons.DELETE, "#7C2D12"),
-        ]
-        texto, icono, color = textos[indice]
+        textos = {
+            "ingreso": ("Registrar Entrada", ft.Icons.DOWNLOAD, "#16A34A"),
+            "egreso": ("Registrar Salida", ft.Icons.UPLOAD, "#DC2626"),
+            "ajuste": ("Registrar Ajuste", ft.Icons.TUNE, "#D97706"),
+            "baja": ("Registrar Baja", ft.Icons.DELETE, "#7C2D12"),
+        }
+        texto, icono, color = textos.get(self.tipo.value, textos["ingreso"])
 
         self.boton_registrar.text = texto
         self.boton_registrar.icon = icono
@@ -327,18 +293,18 @@ class _MovimientosView(ft.Container):
             return
 
         motivo = (self.motivo.value or "").strip()
-        indice = self.tipo.selected_index
+        tipo = self.tipo.value
 
         def _worker():
-            if indice == 0:
+            if tipo == "ingreso":
                 result = MovimientosService.registrar_entrada(
                     producto_id, bodega_id, cantidad, motivo, usuario_id
                 )
-            elif indice == 1:
+            elif tipo == "egreso":
                 result = MovimientosService.registrar_salida(
                     producto_id, bodega_id, cantidad, motivo, usuario_id
                 )
-            elif indice == 2:
+            elif tipo == "ajuste":
                 result = MovimientosService.registrar_ajuste(
                     producto_id, bodega_id, cantidad, motivo, usuario_id
                 )

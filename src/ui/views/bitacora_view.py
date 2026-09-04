@@ -25,6 +25,8 @@ from datetime import datetime
 import flet as ft
 
 from src.services.bitacora_service import BitacoraService
+from src.ui.components.status_header import StatusHeader
+from src.ui.components.page_header import PageHeader
 
 _COLORES_ACCION = {
     "LOGIN": ("#DBEAFE", "#1D4ED8"),
@@ -55,6 +57,9 @@ class _BitacoraView(ft.Container):
 
         self._registros: list[dict] = []
 
+        # ── Barra de estado
+        self._status_header = StatusHeader()
+
         # ── SnackBar
         self._snackbar = ft.SnackBar(content=ft.Text(""), show_close_icon=True)
 
@@ -80,7 +85,7 @@ class _BitacoraView(ft.Container):
                 ft.DropdownOption(key="MOVIMIENTO", text="MOVIMIENTO"),
                 ft.DropdownOption(key="VENTA", text="VENTA"),
             ],
-            on_change=self._aplicar_filtros,
+            on_select=self._aplicar_filtros,
         )
 
         self._fecha_inicio = ft.TextField(
@@ -135,6 +140,7 @@ class _BitacoraView(ft.Container):
     def did_mount(self):
         self.page.overlay.append(self._snackbar)
         self.page.update()
+        self._status_header.load(self.page)
         threading.Thread(target=self._cargar_bitacora, daemon=True).start()
 
     def _cargar_bitacora(
@@ -164,47 +170,10 @@ class _BitacoraView(ft.Container):
     # ======================================================
 
     def header_section(self):
-        return ft.Row(
-            alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
-            controls=[
-                ft.Column(
-                    spacing=2,
-                    controls=[
-                        ft.Text(
-                            "Bitácora",
-                            size=24,
-                            weight=ft.FontWeight.BOLD,
-                            color="#222",
-                        ),
-                        ft.Text(
-                            "Registro de actividades del sistema",
-                            size=12,
-                            color="grey",
-                        ),
-                    ],
-                ),
-                ft.Container(
-                    bgcolor="#E8FFF0",
-                    border_radius=20,
-                    padding=ft.padding.symmetric(horizontal=12, vertical=8),
-                    content=ft.Row(
-                        spacing=5,
-                        controls=[
-                            ft.Icon(
-                                ft.Icons.CHECK_CIRCLE,
-                                color="green",
-                                size=16,
-                            ),
-                            ft.Text(
-                                "Online",
-                                color="green",
-                                size=12,
-                                weight=ft.FontWeight.BOLD,
-                            ),
-                        ],
-                    ),
-                ),
-            ],
+        return PageHeader(
+            title="Bitácora",
+            subtitle="Registro de actividades del sistema",
+            status_control=self._status_header.control,
         )
 
     # ======================================================

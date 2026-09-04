@@ -1,164 +1,187 @@
-# 👑 REY — Software de Inventarios
+# REY — Software de Inventarios
 
-> Sistema de gestión multibodega para el control eficiente de productos, ventas y movimientos entre las bodegas **Fragancias**, **Bala Negra** y **General**.
+Sistema de gestión de inventarios multibodega para el control de productos, ventas y movimientos. Desarrollado como proyecto del programa Análisis y Desarrollo de Software (SENA, ficha 3186627) para la empresa Perfumas.
 
----
+## Tabla de contenidos
 
-## 🗂️ Tabla de Contenidos
+- [Descripción](#descripción)
+- [Características](#características)
+- [Tecnologías](#tecnologías)
+- [Estructura del proyecto](#estructura-del-proyecto)
+- [Instalación](#instalación)
+- [Variables de entorno](#variables-de-entorno)
+- [Ejecución](#ejecución)
+- [Roles](#roles)
+- [Autores](#autores)
 
-- [Descripción](#-descripción)
-- [Características Principales](#-características-principales)
-- [Stack Tecnológico](#-stack-tecnológico)
-- [Estructura del Proyecto](#-estructura-del-proyecto)
-- [Instalación y Configuración](#-instalación-y-configuración)
-- [Variables de Entorno](#-variables-de-entorno)
-- [Cómo Ejecutar](#-cómo-ejecutar)
-- [Roles y Permisos](#-roles-y-permisos)
-- [Autores](#-autores)
+## Descripción
 
----
+REY es una aplicación de escritorio para la administración de inventarios en múltiples bodegas (Fragancias, Bala Negra y General). Permite llevar el control de productos, registrar ventas con descuento automático del stock, reportar movimientos entre bodegas y generar reportes.
 
-## 📋 Descripción
+La aplicación funciona de forma local con PostgreSQL como base de datos principal y mantiene una copia en la nube mediante Supabase. La sincronización es local-first: los registros se guardan primero en la base local y se marcan como pendientes (`dirty = true`) hasta que se sincronizan con Supabase.
 
-REY es una solución integral de escritorio diseñada para la administración eficiente de productos, ventas y movimientos entre múltiples bodegas. El sistema garantiza la **trazabilidad total** de las operaciones y la **integridad de los datos** en entornos de red local, con capacidad de sincronización en la nube mediante Supabase.
+## Características
 
----
+- Gestión de bodegas, productos, clientes y movimientos
+- Registro de ventas con descuento automático de stock y detalle de venta
+- Bitácora de auditoría para registrar acciones de los usuarios
+- Reportes de inventario, ventas y movimientos
+- Autenticación con roles (administrador / empleado)
+- Sincronización local-first con Supabase mediante campos `dirty` y `synced_at`
+- Modo escritorio y modo navegador, con cambio en caliente conservando la sesión
+- Sesión persistente que se mantiene al cambiar entre modos
 
-## 🚀 Características Principales
+## Tecnologías
 
-| Módulo                    | Descripción                                                                          |
-| ------------------------- | ------------------------------------------------------------------------------------ |
-| **Gestión Multibodega**   | Control centralizado para las bodegas Fragancias, Bala Negra y General               |
-| **Afectación Automática** | Registro de ventas con descuento automático del stock en la bodega correspondiente   |
-| **Control de Bajas**      | Módulo para reportar productos dañados, caducados o ajustes por faltantes/sobrantes  |
-| **Seguridad y Roles**     | Autenticación con niveles de acceso diferenciados para Administrador y Vendedor      |
-| **Resiliencia de Datos**  | Operatividad en red local sin dependencia de internet, con sincronización en la nube |
-| **Reportes Avanzados**    | Informes sobre valor del inventario, entradas, salidas y ventas                      |
+| Capa | Tecnología |
+| --- | --- |
+| Lenguaje | Python 3.12 |
+| Interfaz | Flet (Flutter) |
+| Base de datos local | PostgreSQL |
+| Sincronización en la nube | Supabase (PostgREST) |
+| Reportes | openpyxl / pandas |
 
----
-
-## 🛠️ Stack Tecnológico
-
-| Capa                          | Tecnología                                                |
-| ----------------------------- | --------------------------------------------------------- |
-| **Lenguaje**                  | Python 3.11+                                              |
-| **Interfaz (UI)**             | [Flet](https://flet.dev/) (basado en Flutter)             |
-| **Base de datos local**       | PostgreSQL — normalizada para concurrencia y consistencia |
-| **Sincronización en la nube** | Supabase (PostgreSQL gestionado)                          |
-
----
-
-## 📁 Estructura del Proyecto
+## Estructura del proyecto
 
 ```
 REY_SOFTWARE_DE_INVENTARIOS/
 │
-├── main.py                         # Punto de entrada — solo llama ft.run()
-├── .env                            # Credenciales (NO subir a git)
+├── main.py                      # Punto de entrada
+├── .env                         # Credenciales (no se sube a git)
 ├── .gitignore
 ├── README.md
 ├── requirements.txt
+├── supabase_schema.sql          # Esquema de referencia para Supabase
+├── start_rey.vbs                # Launcher para modo escritorio
+├── start_rey_web.vbs            # Launcher para modo navegador
+├── assets/
+│   └── icon.ico                 # Icono de la aplicación
 │
 └── src/
     ├── core/
-    │   └── supabase_client.py      # Singleton de conexión a Supabase
-    │
+    │   ├── local_db.py          # Conexión a PostgreSQL local
+    │   └── supabase_client.py   # Cliente de Supabase
     ├── models/
-    │   └── user.py                 # Modelo/esquema de usuario
-    │
+    │   └── user.py              # Modelo de usuario
+    ├── services/                # Lógica de negocio (sin UI)
+    │   ├── auth_service.py
+    │   ├── bitacora_service.py
+    │   ├── bodegas_service.py
+    │   ├── clientes_service.py
+    │   ├── movimientos_service.py
+    │   ├── productos_service.py
+    │   ├── reportes_service.py
+    │   └── ventas_service.py
+    ├── sync/
+    │   └── sync_service.py      # Sincronización local ↔ Supabase
     ├── reports/
-    │   ├── generators/             # Lógica para generar reportes
-    │   └── parsers/                # Parseo y transformación de datos
-    │
-    ├── services/
-    │   └── auth_service.py         # Lógica de autenticación (sin UI)
-    │
-    ├── sync/                       # Sincronización local ↔ nube
-    │
+    │   ├── generators/          # Generación de reportes
+    │   └── parsers/             # Transformación de datos
     ├── tests/
+    │   ├── test_local_db.py
     │   └── test_supabase_connection.py
-    │
     └── ui/
-        ├── app.py                  # Router principal y manejo de estado de página
-        ├── components/
-        │   └── cards.py            # Widgets reutilizables (tarjetas del dashboard)
-        └── views/
-            ├── login_view.py       # Pantalla de inicio de sesión
-            └── dashboard_view.py   # Pantalla principal del dashboard
+        ├── app.py               # Router principal
+        ├── components/          # Componentes reutilizables
+        │   ├── cards.py
+        │   ├── page_header.py
+        │   ├── sidebar.py
+        │   ├── status_header.py
+        │   └── view_switcher.py
+        └── views/               # Vistas de cada módulo
+            ├── login_view.py
+            ├── dashboard_view.py
+            ├── bodegas_view.py
+            ├── productos_view.py
+            ├── movimientos_view.py
+            ├── ventas_view.py
+            ├── clientes_view.py
+            ├── reportes_view.py
+            └── bitacora_view.py
 ```
 
----
+## Instalación
 
-## ⚙️ Instalación y Configuración
-
-### 1. Clonar el repositorio
+1. Clonar el repositorio:
 
 ```bash
 git clone https://github.com/Santy2206/Rey_Software_de_inventarios.git
 cd REY_Software_de_inventarios
 ```
 
-### 2. Crear y activar el entorno virtual
+2. Crear y activar el entorno virtual (Python 3.12):
 
 ```bash
-# Windows #python 3.12
 python -m venv .venv
+
+# Windows
 .venv\Scripts\activate
 
 # macOS / Linux
-python -m venv .venv
 source .venv/bin/activate
 ```
 
-### 3. Instalar dependencias
+3. Instalar dependencias:
 
 ```bash
 pip install -r requirements.txt
 ```
 
----
+4. Crear la base de datos local en PostgreSQL:
 
-## 🔐 Variables de Entorno
-
-Crea un archivo `.env` en la raíz del proyecto con las siguientes variables:
-
-```env
-SUPABASE_URL=https://ojhnsyorsaowszkmfcmf.supabase.co
-SUPABASE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9qaG5zeW9yc2Fvd3N6a21mY21mIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg0NDE5MDUsImV4cCI6MjA5NDAxNzkwNX0.IHGjm6TIBJuZ-VyhX0GSrFMRYJUNPgbQO8EnWFCFvRQ
+```sql
+CREATE DATABASE rey_inventarios;
 ```
 
-> ⚠️ **Nunca subas el archivo `.env` a Git.** Ya está incluido en `.gitignore`.
+Las tablas se crean automáticamente al primer arranque de la aplicación.
 
----
+## Variables de entorno
 
-## ▶️ Cómo Ejecutar
+Crear un archivo `.env` en la raíz del proyecto:
+
+```env
+SUPABASE_URL=https://<tu-proyecto>.supabase.co
+SUPABASE_KEY=<tu-anon-key>
+
+LOCAL_DB_HOST=127.0.0.1
+LOCAL_DB_PORT=5432
+LOCAL_DB_NAME=rey_inventarios
+LOCAL_DB_USER=postgres
+LOCAL_DB_PASSWORD=<tu-contraseña>
+```
+
+El archivo `.env` está incluido en `.gitignore` y no debe subirse al repositorio.
+
+## Ejecución
+
+Modo escritorio (ventana nativa):
 
 ```bash
 python main.py
 ```
 
-La aplicación se abrirá en el navegador por defecto (`http://localhost:PORT`).
+Modo navegador:
 
----
+```bash
+python main.py --web
+```
 
-## 👥 Roles y Permisos
+Desde la interfaz se puede cambiar entre modos con el botón "Abrir en navegador" o "Abrir en escritorio". La sesión se mantiene al cambiar de modo.
 
-| Rol               | Acceso                                                            |
-| ----------------- | ----------------------------------------------------------------- |
-| **Administrador** | Acceso total: inventario, ventas, bajas, reportes y configuración |
-| **Vendedor**      | Acceso restringido: solo registro de ventas y consulta de stock   |
+Para sincronizar los datos locales con Supabase, usar el botón "Sincronizar ahora" en la barra de estado. Si hay registros pendientes, el badge mostrará "Pendientes (N)" en naranja.
 
----
+## Roles
 
-## ✒️ Autores
+| Rol | Permisos |
+| --- | --- |
+| Administrador | Acceso total: bodegas, productos, movimientos, ventas, clientes, reportes, bitácora |
+| Empleado | Acceso restringido: ventas y consulta de inventario |
 
-Desarrollado por estudiantes de **Análisis y Desarrollo de Software** — SENA, ficha **3186627**:
+## Autores
+
+Desarrollado por estudiantes de Análisis y Desarrollo de Software — SENA, ficha 3186627:
 
 - Laura Daniela Upegui Díaz
 - Alison Gisell Nocua Cruz
 - Jefferson Stiven Vargas Rodríguez
 - Santiago Díaz Castellanos
-
----
-
-_v2.0 © 2026 REY Inventarios_

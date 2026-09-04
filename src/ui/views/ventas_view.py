@@ -24,6 +24,8 @@ from src.services.auth_service import AuthService
 from src.services.clientes_service import ClientesService
 from src.services.productos_service import ProductosService
 from src.services.ventas_service import VentasService
+from src.ui.components.status_header import StatusHeader
+from src.ui.components.page_header import PageHeader
 
 
 def VentasView():
@@ -157,6 +159,8 @@ class _VentasView(ft.Container):
         )
         self._snackbar = ft.SnackBar(content=ft.Text(""), show_close_icon=True)
 
+        self._status_header = StatusHeader()
+
         self.content = ft.Column(
             spacing=0,
             expand=True,
@@ -173,6 +177,7 @@ class _VentasView(ft.Container):
         self.page.overlay.append(self._dialog_cliente)
         self.page.overlay.append(self._snackbar)
         self.page.update()
+        self._status_header.load(self.page)
         threading.Thread(target=self._cargar_datos_iniciales, daemon=True).start()
 
     def _cargar_datos_iniciales(self):
@@ -210,25 +215,11 @@ class _VentasView(ft.Container):
         ]
 
     def _header(self):
-        return ft.Row(
-            alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
-            controls=[
-                ft.Column(
-                    spacing=4,
-                    controls=[
-                        ft.Text(
-                            "Ventas",
-                            size=24,
-                            weight=ft.FontWeight.BOLD,
-                            color="#222",
-                        ),
-                        ft.Text(
-                            "Registro de ventas con descuento automático de stock",
-                            size=12,
-                            color="grey",
-                        ),
-                    ],
-                ),
+        return PageHeader(
+            title="Ventas",
+            subtitle="Registro de ventas con descuento automático de stock",
+            status_control=self._status_header.control,
+            action_buttons=[
                 ft.ElevatedButton(
                     "Importar ventas",
                     icon=ft.Icons.UPLOAD_FILE,

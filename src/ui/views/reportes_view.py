@@ -23,6 +23,8 @@ import threading
 import flet as ft
 
 from src.services.reportes_service import ReportesService
+from src.ui.components.status_header import StatusHeader
+from src.ui.components.page_header import PageHeader
 
 _TIPOS_REPORTE = [
     ("Bodegas/Productos", ft.Icons.WAREHOUSE, "#1976D2"),
@@ -67,6 +69,9 @@ class _ReportesView(ft.Container):
 
         # ── SnackBar ───────────────────────────────────────────────────────
         self._snackbar = ft.SnackBar(content=ft.Text(""), show_close_icon=True)
+
+        # ── Barra de estado
+        self._status_header = StatusHeader()
 
         # ── Filtros ────────────────────────────────────────────────────────
         self._dropdown_mes = ft.Dropdown(
@@ -114,26 +119,16 @@ class _ReportesView(ft.Container):
     def did_mount(self):
         self.page.overlay.append(self._snackbar)
         self.page.update()
+        self._status_header.load(self.page)
 
     # ============================================================
     # HEADER
     # ============================================================
     def header(self):
-        return ft.Column(
-            spacing=5,
-            controls=[
-                ft.Text(
-                    "Reportes",
-                    size=24,
-                    weight=ft.FontWeight.BOLD,
-                    color="#222",
-                ),
-                ft.Text(
-                    "Genera y exporta reportes del sistema",
-                    size=12,
-                    color="grey",
-                ),
-            ],
+        return PageHeader(
+            title="Reportes",
+            subtitle="Genera y exporta reportes del sistema",
+            status_control=self._status_header.control,
         )
 
     # ============================================================

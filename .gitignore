@@ -10,7 +10,6 @@ venv/
 env/
 ENV/
 
-
 # Distribución / packaging
 build/
 dist/
@@ -58,21 +57,15 @@ assets/dist/
 *.pid
 *.seed
 
-# Supabase
-supabase
-supabase/.temp/
-supabase/temp/
-.supabase/config.toml
+# Temporales de desarrollo / debugging
+.tmp_*
+~$*
 
 # Local environment
 .env
 .env.local
+.rey_session.json
 
-# Supabase generated files
-**/pooler-url
-**/project-ref
-**/rest-version
-**/storage-version
-**/gotrue-version
-**/cli-latest
-**/_current_branch
+# Supabase CLI (generados localmente)
+supabase/
+.supabase/

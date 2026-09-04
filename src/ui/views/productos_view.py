@@ -23,6 +23,8 @@ import flet as ft
 
 from src.services.productos_service import ProductosService
 from src.services.bodegas_service import BodegasService
+from src.ui.components.status_header import StatusHeader
+from src.ui.components.page_header import PageHeader
 
 _CARD_COLORS = ["#f5b400", "#c2185b", "#2563eb", "#16a34a", "#7c3aed"]
 
@@ -54,7 +56,7 @@ class _ProductosView(ft.Container):
             label="Filtrar por bodega",
             width=300,
             options=[ft.DropdownOption(key="todas", text="Todas")],
-            on_change=self._aplicar_filtro,
+            on_select=self._aplicar_filtro,
         )
 
         # ── Fila de tarjetas + indicador de carga ───────────────────────────
@@ -132,6 +134,44 @@ class _ProductosView(ft.Container):
             actions_alignment=ft.MainAxisAlignment.END,
         )
 
+        # ── Barra de estado
+        self._status_header = StatusHeader()
+
+        # Campos del diálogo de importación
+        self._import_bodega = ft.Dropdown(
+            label="Bodega destino *",
+            options=[],
+            border_radius=10,
+        )
+        self._import_ruta = ft.TextField(
+            label="Ruta del archivo",
+            hint_text="C:\\Users\\...\\productos.xlsx",
+            border_radius=10,
+        )
+
+        self._dialog_importar = ft.AlertDialog(
+            modal=True,
+            title=ft.Text("Importar productos desde Excel/CSV"),
+            content=ft.Column(
+                tight=True,
+                spacing=12,
+                controls=[
+                    self._import_bodega,
+                    self._import_ruta,
+                ],
+            ),
+            actions=[
+                ft.TextButton("Cancelar", on_click=self._cerrar_dialogo_importar),
+                ft.ElevatedButton(
+                    "Importar",
+                    bgcolor="#2196F3",
+                    color="white",
+                    on_click=self._importar_excel,
+                ),
+            ],
+            actions_alignment=ft.MainAxisAlignment.END,
+        )
+
         # ── SnackBar
         self._snackbar = ft.SnackBar(
             content=ft.Text(""),
@@ -156,8 +196,10 @@ class _ProductosView(ft.Container):
     # ── Lifecycle hook ──────────────────────────────────────────────────────
     def did_mount(self):
         self.page.overlay.append(self._dialog)
+        self.page.overlay.append(self._dialog_importar)
         self.page.overlay.append(self._snackbar)
         self.page.update()
+        self._status_header.load(self.page)
         threading.Thread(target=self._cargar_productos, daemon=True).start()
 
     # ─────────────────────────────────────────────────────────────────────────
@@ -169,6 +211,10 @@ class _ProductosView(ft.Container):
         if res_bodegas.get("success"):
             self._bodegas = res_bodegas.get("data", [])
             self._campo_bodega.options = [
+                ft.DropdownOption(key=b["id"], text=b["nombre"])
+                for b in self._bodegas
+            ]
+            self._import_bodega.options = [
                 ft.DropdownOption(key=b["id"], text=b["nombre"])
                 for b in self._bodegas
             ]
@@ -224,24 +270,17 @@ class _ProductosView(ft.Container):
     # ─────────────────────────────────────────────────────────────────────────
 
     def _header_section(self):
-        return ft.Row(
-            alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
-            controls=[
-                ft.Column(
-                    spacing=2,
-                    controls=[
-                        ft.Text(
-                            "Productos",
-                            size=24,
-                            weight=ft.FontWeight.BOLD,
-                            color="#222",
-                        ),
-                        ft.Text(
-                            "Gestiona los productos del inventario",
-                            size=12,
-                            color="grey",
-                        ),
-                    ],
+        return PageHeader(
+            title="Productos",
+            subtitle="Gestiona los productos del inventario",
+            status_control=self._status_header.control,
+            action_buttons=[
+                ft.ElevatedButton(
+                    "Importar Excel",
+                    icon=ft.Icons.UPLOAD_FILE,
+                    bgcolor="#2196F3",
+                    color="white",
+                    on_click=self._abrir_dialogo_importar,
                 ),
                 ft.ElevatedButton(
                     "Crear Producto",
@@ -506,6 +545,47 @@ class _ProductosView(ft.Container):
     def _eliminar_producto(self, producto_id: str, nombre: str):
         def _worker():
             result = ProductosService.delete(producto_id=producto_id)
+            self._mostrar_snack(
+                result.get("message", ""), error=not result.get("success")
+            )
+            if result.get("success"):
+                self._loading_ring.visible = True
+                self.page.update()
+                self._cargar_productos()
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Importación masiva desde Excel/CSV
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def _abrir_dialogo_importar(self, e=None):
+        self._import_bodega.value = None
+        self._import_ruta.value = ""
+        self._dialog_importar.open = True
+        self.page.update()
+
+    def _cerrar_dialogo_importar(self, e=None):
+        self._dialog_importar.open = False
+        self.page.update()
+
+    def _importar_excel(self, e=None):
+        bodega_id = self._import_bodega.value
+        ruta = (self._import_ruta.value or "").strip()
+
+        if not bodega_id:
+            self._mostrar_snack("⚠️ Selecciona una bodega destino.", error=True)
+            return
+        if not ruta:
+            self._mostrar_snack("⚠️ Selecciona un archivo para importar.", error=True)
+            return
+
+        self._cerrar_dialogo_importar()
+
+        def _worker():
+            result = ProductosService.importar_excel(
+                ruta_archivo=ruta, bodega_id=bodega_id
+            )
             self._mostrar_snack(
                 result.get("message", ""), error=not result.get("success")
             )

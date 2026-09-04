@@ -192,11 +192,30 @@ class BodegasService:
         """
         Elimina una bodega por su ID.
 
+        No permite eliminar una bodega que tenga productos asociados,
+        ya que la base de datos tiene una foreign key RESTRICT y
+        productos.bodega_id es NOT NULL.
+
         Parámetros:
             bodega_id: el id de la bodega a eliminar
         """
         print(f"--- Eliminando bodega id: {bodega_id} ---")
         try:
+            # Verificar si hay productos asociados
+            productos = run_query(
+                "SELECT COUNT(*) AS n FROM productos WHERE bodega_id = %s",
+                (bodega_id,),
+                fetch_one=True,
+            )
+            if productos and productos["n"] > 0:
+                mensaje = (
+                    f"No se puede eliminar la bodega porque tiene "
+                    f"{productos['n']} producto(s) asociado(s). "
+                    f"Elimine o mueva esos productos primero."
+                )
+                print(f" {mensaje}")
+                return {"success": False, "message": mensaje}
+
             eliminado = run_query(
                 "DELETE FROM bodegas WHERE id = %s RETURNING id",
                 (bodega_id,),

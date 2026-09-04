@@ -32,14 +32,19 @@ from src.core.local_db import get_cursor, run_query
 from src.core.supabase_client import supabase
 
 
-# Tablas que participan en la sincronización.
-# Se deben llamar exactamente igual en PostgreSQL local y en Supabase.
+# Orden de sincronización respetando FKs (padres primero).
+# usuarios no tiene dirty/synced_at: se sincroniza siempre como base.
+_TABLAS_BASE = [
+    "usuarios",  # sin dirty: siempre se sube para satisfacer FKs
+]
+
 _TABLAS_A_SYNC = [
+    "bodegas",
+    "clientes",
     "productos",
     "movimientos",
     "ventas",
-    "bodegas",
-    "clientes",
+    "venta_detalle",
     "bitacora",
 ]
 
@@ -82,6 +87,23 @@ class SyncService:
     """
 
     @staticmethod
+    def _tabla_tiene_dirty(tabla: str) -> bool:
+        """True si la tabla tiene columna dirty (no aplica a usuarios)."""
+        fila = run_query(
+            """
+            SELECT 1
+            FROM information_schema.columns
+            WHERE table_schema = 'public'
+              AND table_name = %s
+              AND column_name = 'dirty'
+            LIMIT 1
+            """,
+            (tabla,),
+            fetch_one=True,
+        )
+        return bool(fila)
+
+    @staticmethod
     def pendientes_por_tabla() -> dict:
         """
         Retorna un conteo de filas dirty pendientes por tabla.
@@ -93,6 +115,9 @@ class SyncService:
         try:
             resumen = {}
             for tabla in _TABLAS_A_SYNC:
+                if not SyncService._tabla_tiene_dirty(tabla):
+                    resumen[tabla] = 0
+                    continue
                 fila = run_query(
                     f"SELECT COUNT(*) AS n FROM {tabla} WHERE dirty = true",
                     fetch_one=True,
@@ -115,15 +140,60 @@ class SyncService:
             }
 
     @staticmethod
+    def _upsert_tabla(tabla: str, solo_dirty: bool = True) -> dict:
+        """
+        Sube filas de una tabla a Supabase.
+
+        Si solo_dirty=True, solo filas dirty.
+        Si la tabla no tiene dirty, sube todas (caso usuarios).
+        """
+        tiene_dirty = SyncService._tabla_tiene_dirty(tabla)
+        if solo_dirty and tiene_dirty:
+            filas = run_query(f"SELECT * FROM {tabla} WHERE dirty = true ORDER BY id")
+        else:
+            filas = run_query(f"SELECT * FROM {tabla} ORDER BY id")
+
+        if not filas:
+            return {"subidos": 0, "fallidos": 0}
+
+        subidos = 0
+        fallidos = 0
+        for fila in filas:
+            fila_id = fila.get("id")
+            try:
+                payload = _preparar_fila(fila)
+                resp = supabase.table(tabla).upsert(payload).execute()
+
+                if resp is None or not getattr(resp, "data", None):
+                    raise Exception(f"Respuesta inesperada de Supabase: {resp}")
+
+                if tiene_dirty:
+                    run_query(
+                        f"""
+                        UPDATE {tabla}
+                        SET dirty = false,
+                            synced_at = now()
+                        WHERE id = %s
+                        """,
+                        (fila_id,),
+                    )
+                subidos += 1
+            except Exception as e:
+                error_msg = str(e)
+                print(f"   Fallo al sincronizar {tabla} id={fila_id}: {error_msg}")
+                print(traceback.format_exc())
+                fallidos += 1
+
+        return {"subidos": subidos, "fallidos": fallidos}
+
+    @staticmethod
     def sync_pendientes():
         """
         Sube a Supabase todas las filas dirty de las tablas configuradas.
 
-        Para cada fila:
-            1. Se prepara el payload (sin dirty/synced_at).
-            2. Se ejecuta upsert en Supabase.
-            3. Si el upsert es exitoso: dirty = false, synced_at = now().
-            4. Si el upsert falla: se deja dirty = true para reintento.
+        Orden:
+            1. tablas base (usuarios) para satisfacer FKs
+            2. resto en orden de dependencias (bodegas -> ... -> bitacora)
 
         Retorna:
             dict: contrato estándar con resumen de subidos/fallidos.
@@ -134,53 +204,21 @@ class SyncService:
         total_fallidos = 0
 
         try:
+            # 1) Bases (siempre, para que existan en la nube)
+            for tabla in _TABLAS_BASE:
+                print(f" Sincronizando tabla base: {tabla}")
+                r = SyncService._upsert_tabla(tabla, solo_dirty=False)
+                resumen[tabla] = r
+                total_subidos += r["subidos"]
+                total_fallidos += r["fallidos"]
+
+            # 2) Tablas con dirty en orden de FKs
             for tabla in _TABLAS_A_SYNC:
                 print(f" Sincronizando tabla: {tabla}")
-                filas = run_query(
-                    f"SELECT * FROM {tabla} WHERE dirty = true ORDER BY id"
-                )
-
-                if not filas:
-                    resumen[tabla] = {"subidos": 0, "fallidos": 0}
-                    continue
-
-                subidos = 0
-                fallidos = 0
-
-                for fila in filas:
-                    fila_id = fila.get("id")
-                    try:
-                        payload = _preparar_fila(fila)
-                        resp = supabase.table(tabla).upsert(payload).execute()
-
-                        if resp is None or not getattr(resp, "data", None):
-                            raise Exception(
-                                f"Respuesta inesperada de Supabase: {resp}"
-                            )
-
-                        # Marcar fila como sincronizada
-                        run_query(
-                            f"""
-                            UPDATE {tabla}
-                            SET dirty = false,
-                                synced_at = now()
-                            WHERE id = %s
-                            """,
-                            (fila_id,),
-                        )
-                        subidos += 1
-
-                    except Exception as e:
-                        error_msg = str(e)
-                        print(
-                            f"   Fallo al sincronizar {tabla} id={fila_id}: {error_msg}"
-                        )
-                        print(traceback.format_exc())
-                        fallidos += 1
-
-                resumen[tabla] = {"subidos": subidos, "fallidos": fallidos}
-                total_subidos += subidos
-                total_fallidos += fallidos
+                r = SyncService._upsert_tabla(tabla, solo_dirty=True)
+                resumen[tabla] = r
+                total_subidos += r["subidos"]
+                total_fallidos += r["fallidos"]
 
             mensaje = (
                 f"Sincronización completada: {total_subidos} subidos, "

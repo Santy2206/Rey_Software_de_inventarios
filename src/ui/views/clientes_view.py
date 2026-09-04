@@ -19,6 +19,8 @@ import threading
 import flet as ft
 
 from src.services.clientes_service import ClientesService
+from src.ui.components.status_header import StatusHeader
+from src.ui.components.page_header import PageHeader
 
 _CARD_COLORS = ["#2563eb", "#16a34a", "#f5b400", "#c2185b", "#7c3aed"]
 
@@ -98,6 +100,9 @@ class _ClientesView(ft.Container):
             actions_alignment=ft.MainAxisAlignment.END,
         )
 
+        # ── Barra de estado
+        self._status_header = StatusHeader()
+
         # ── SnackBar
         self._snackbar = ft.SnackBar(
             content=ft.Text(""),
@@ -122,6 +127,7 @@ class _ClientesView(ft.Container):
         self.page.overlay.append(self._dialog)
         self.page.overlay.append(self._snackbar)
         self.page.update()
+        self._status_header.load(self.page)
         threading.Thread(target=self._cargar_clientes, daemon=True).start()
 
     # ─────────────────────────────────────────────────────────────────────────
@@ -166,25 +172,11 @@ class _ClientesView(ft.Container):
     # ─────────────────────────────────────────────────────────────────────────
 
     def _header_section(self):
-        return ft.Row(
-            alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
-            controls=[
-                ft.Column(
-                    spacing=2,
-                    controls=[
-                        ft.Text(
-                            "Clientes",
-                            size=24,
-                            weight=ft.FontWeight.BOLD,
-                            color="#222",
-                        ),
-                        ft.Text(
-                            "Gestiona los clientes del sistema",
-                            size=12,
-                            color="grey",
-                        ),
-                    ],
-                ),
+        return PageHeader(
+            title="Clientes",
+            subtitle="Gestiona los clientes del sistema",
+            status_control=self._status_header.control,
+            action_buttons=[
                 ft.ElevatedButton(
                     "Crear Cliente",
                     icon=ft.Icons.ADD,
