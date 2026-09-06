@@ -7,6 +7,7 @@ SET statement_timeout = 0;
 --
 -- Limpiar tablas existentes en Supabase (CASCADE para evitar dependencias FK)
 --
+DROP TABLE IF EXISTS public.ventas_import_raw CASCADE;
 DROP TABLE IF EXISTS public.venta_detalle CASCADE;
 DROP TABLE IF EXISTS public.ventas CASCADE;
 DROP TABLE IF EXISTS public.movimientos CASCADE;
@@ -37,6 +38,9 @@ CREATE TABLE public.bitacora (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     usuario_id uuid NOT NULL,
     accion text NOT NULL,
+    entidad text,
+    entidad_id text,
+    detalle text,
     detalles jsonb,
     fecha timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
     dirty boolean DEFAULT true,
@@ -49,6 +53,8 @@ CREATE TABLE public.bodegas (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     nombre character varying(100) NOT NULL,
     ubicacion text,
+    es_principal boolean DEFAULT false NOT NULL,
+    cuentas_elisa text,
     creado_en timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
     dirty boolean DEFAULT true,
     synced_at timestamp with time zone
@@ -61,6 +67,9 @@ CREATE TABLE public.clientes (
     nombre character varying(100) NOT NULL,
     telefono character varying(20),
     email character varying(100),
+    cedula text,
+    codigo_elisa text,
+    es_generico boolean DEFAULT false NOT NULL,
     creado_en timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
     dirty boolean DEFAULT true,
     synced_at timestamp with time zone
@@ -74,7 +83,7 @@ CREATE TABLE public.movimientos (
     bodega_id uuid NOT NULL,
     usuario_id uuid NOT NULL,
     tipo character varying(20) NOT NULL,
-    cantidad integer NOT NULL,
+    cantidad numeric(14, 4) NOT NULL,
     fecha timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
     motivo character varying(150),
     dirty boolean DEFAULT true,
@@ -101,12 +110,10 @@ CREATE TABLE public.productos (
     sku character varying(50),
     codigo character varying(50),
     precio numeric(10, 2) DEFAULT 0 NOT NULL,
-    stock_actual integer DEFAULT 0 NOT NULL,
+    stock_actual numeric(14, 4) DEFAULT 0 NOT NULL,
     creado_en timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
     dirty boolean DEFAULT true,
-    synced_at timestamp with time zone,
-    CONSTRAINT productos_precio_check CHECK ((precio >= (0)::numeric)),
-    CONSTRAINT productos_stock_actual_check CHECK ((stock_actual >= 0))
+    synced_at timestamp with time zone
 );
 --
 -- Name: usuarios; Type: TABLE; Schema: public; Owner: -
@@ -135,7 +142,7 @@ CREATE TABLE public.venta_detalle (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     venta_id uuid NOT NULL,
     producto_id uuid NOT NULL,
-    cantidad integer NOT NULL,
+    cantidad numeric(14, 4) NOT NULL,
     precio_unitario numeric(10, 2) NOT NULL,
     subtotal numeric(10, 2) NOT NULL,
     CONSTRAINT venta_detalle_cantidad_check CHECK ((cantidad > 0)),
@@ -150,10 +157,51 @@ CREATE TABLE public.ventas (
     cliente_id uuid NOT NULL,
     usuario_id uuid NOT NULL,
     total numeric(10, 2) DEFAULT 0.00 NOT NULL,
+    anulada boolean DEFAULT false,
     fecha timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
     dirty boolean DEFAULT true,
     synced_at timestamp with time zone,
     CONSTRAINT ventas_total_check CHECK ((total >= (0)::numeric))
+);
+--
+-- Name: ventas_import_raw; Type: TABLE; Schema: public; Owner: -
+-- Tabla de aterrizaje de archivos .xls de ventas Elisa (Fase 1).
+-- Las 7 columnas del Excel se guardan en texto original sin transformar.
+--
+CREATE TABLE public.ventas_import_raw (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    lote_id uuid NOT NULL,
+    fila_origen integer NOT NULL,
+    fecha text,
+    cuenta text,
+    concepto text,
+    identidad text,
+    nombre_tercero text,
+    telefonos_tercero text,
+    credito text,
+    concepto_limpio text,
+    cantidad integer DEFAULT 1,
+    descuento_pct numeric(5, 2),
+    atributos jsonb,
+    es_cuadre_caja boolean DEFAULT false NOT NULL,
+    procesado boolean DEFAULT false NOT NULL,
+    estado_resolucion text DEFAULT 'pendiente' NOT NULL,
+    producto_id uuid,
+    productos_vinculados jsonb,
+    candidatos jsonb,
+    motivo_descarte text,
+    clave_busqueda text,
+    cliente_id uuid,
+    estado_cliente text DEFAULT 'pendiente' NOT NULL,
+    codigo_elisa text,
+    nombre_cliente_limpio text,
+    conflicto_cliente jsonb,
+    venta_id uuid,
+    error_proceso text,
+    estado_proceso text DEFAULT 'pendiente' NOT NULL,
+    huella text,
+    es_duplicado_omitido boolean DEFAULT false NOT NULL,
+    creado_en timestamp with time zone DEFAULT CURRENT_TIMESTAMP
 );
 --
 -- Name: bitacora bitacora_pkey; Type: CONSTRAINT; Schema: public; Owner: -
@@ -181,11 +229,6 @@ ADD CONSTRAINT movimientos_pkey PRIMARY KEY (id);
 ALTER TABLE ONLY public.productos
 ADD CONSTRAINT productos_pkey PRIMARY KEY (id);
 --
--- Name: productos productos_sku_key; Type: CONSTRAINT; Schema: public; Owner: -
---
-ALTER TABLE ONLY public.productos
-ADD CONSTRAINT productos_sku_key UNIQUE (sku);
---
 -- Name: usuarios usuarios_email_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 ALTER TABLE ONLY public.usuarios
@@ -211,9 +254,26 @@ ADD CONSTRAINT venta_detalle_pkey PRIMARY KEY (id);
 ALTER TABLE ONLY public.ventas
 ADD CONSTRAINT ventas_pkey PRIMARY KEY (id);
 --
+-- Name: ventas_import_raw ventas_import_raw_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+ALTER TABLE ONLY public.ventas_import_raw
+ADD CONSTRAINT ventas_import_raw_pkey PRIMARY KEY (id);
+--
 -- Name: idx_bitacora_usuario; Type: INDEX; Schema: public; Owner: -
 --
 CREATE INDEX idx_bitacora_usuario ON public.bitacora USING btree (usuario_id);
+--
+-- Name: idx_ventas_import_raw_lote; Type: INDEX; Schema: public; Owner: -
+--
+CREATE INDEX idx_ventas_import_raw_lote ON public.ventas_import_raw USING btree (lote_id);
+--
+-- Name: idx_ventas_import_raw_procesado; Type: INDEX; Schema: public; Owner: -
+--
+CREATE INDEX idx_ventas_import_raw_procesado ON public.ventas_import_raw USING btree (procesado);
+--
+-- Name: idx_ventas_import_raw_estado; Type: INDEX; Schema: public; Owner: -
+--
+CREATE INDEX idx_ventas_import_raw_estado ON public.ventas_import_raw USING btree (estado_resolucion);
 --
 -- Name: idx_movimientos_bodega; Type: INDEX; Schema: public; Owner: -
 --

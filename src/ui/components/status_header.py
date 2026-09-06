@@ -117,22 +117,67 @@ class StatusHeader:
             ],
         )
 
+    def _dialogo_sync(self):
+        """Construye el diálogo de progreso de sincronización."""
+        barra = ft.ProgressBar(value=0, color="#2196F3", width=260)
+        texto = ft.Text("Preparando...", size=14)
+        detalle = ft.Text("", size=12, color="grey")
+        dlg = ft.AlertDialog(
+            modal=True,
+            title=ft.Text("Sincronizando"),
+            content=ft.Column(
+                tight=True,
+                spacing=12,
+                width=300,
+                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                controls=[
+                    ft.Text("Enviando datos a Supabase...", size=14),
+                    barra,
+                    texto,
+                    detalle,
+                ],
+            ),
+        )
+        return dlg, barra, texto, detalle
+
+    async def _actualizar_progreso(self, barra, texto, detalle, enviados, total, tabla):
+        """Actualiza la barra y el contador desde el event loop de la página."""
+        try:
+            texto.value = (
+                f"{enviados}/{total} registros enviados"
+                if total
+                else f"{enviados} enviados"
+            )
+            barra.value = (enviados / total) if total else 0
+            detalle.value = f"Tabla: {tabla}"
+            self._page.update()
+        except Exception:
+            pass
+
+    def _crear_on_progress(self, barra, texto, detalle):
+        """Crea el callback de progreso que encola la actualización en la página."""
+        def _on_progress(enviados, total, tabla):
+            if not self._page:
+                return
+            try:
+                self._page.run_task(
+                    self._actualizar_progreso,
+                    barra,
+                    texto,
+                    detalle,
+                    enviados,
+                    total,
+                    tabla,
+                )
+            except Exception:
+                pass
+        return _on_progress
+
     def _on_sincronizar(self, _e):
         if not self._page or self._btn_sync.disabled:
             return
 
-        dlg = ft.AlertDialog(
-            modal=True,
-            title=ft.Text("Sincronizando"),
-            content=ft.Row(
-                spacing=15,
-                alignment=ft.MainAxisAlignment.CENTER,
-                controls=[
-                    ft.ProgressRing(color="#2196F3", width=28, height=28),
-                    ft.Text("Enviando datos a Supabase...", size=14),
-                ],
-            ),
-        )
+        dlg, barra, texto, detalle = self._dialogo_sync()
         self._page.overlay.append(dlg)
         self._page.show_dialog(dlg)
 
@@ -141,7 +186,10 @@ class StatusHeader:
                 return
             self._page.run_task(self._mostrar_notificacion, dlg, result)
 
-        SyncService.sync_pendientes_background(callback=_on_result)
+        SyncService.sync_pendientes_background(
+            callback=_on_result,
+            on_progress=self._crear_on_progress(barra, texto, detalle),
+        )
 
     def _mostrar_pendientes(self, _e=None):
         """Abre el diálogo de registros pendientes cuando hay datos por sync."""
@@ -198,18 +246,7 @@ class StatusHeader:
         dlg.open = False
         self._page.update()
 
-        loading = ft.AlertDialog(
-            modal=True,
-            title=ft.Text("Sincronizando"),
-            content=ft.Row(
-                spacing=15,
-                alignment=ft.MainAxisAlignment.CENTER,
-                controls=[
-                    ft.ProgressRing(color="#2196F3", width=28, height=28),
-                    ft.Text("Enviando datos a Supabase...", size=14),
-                ],
-            ),
-        )
+        loading, barra, texto, detalle = self._dialogo_sync()
         self._page.overlay.append(loading)
         self._page.show_dialog(loading)
 
@@ -218,7 +255,10 @@ class StatusHeader:
                 return
             self._page.run_task(self._mostrar_notificacion, loading, result)
 
-        SyncService.sync_pendientes_background(callback=_on_result)
+        SyncService.sync_pendientes_background(
+            callback=_on_result,
+            on_progress=self._crear_on_progress(barra, texto, detalle),
+        )
 
     async def _mostrar_notificacion(self, dlg: ft.AlertDialog, result: dict):
         if not self._page:
@@ -227,8 +267,15 @@ class StatusHeader:
             success = result.get("success", False)
             mensaje = result.get("message", "Sincronización finalizada")
 
-            # Cerrar diálogo de carga
-            dlg.open = False
+            # Cerrar diálogo de carga (pop_dialog es lo correcto para
+            # diálogos abiertos con show_dialog en Flet 0.84; poner
+            # open=False + page.update() dejaba el modal visible).
+            try:
+                self._page.pop_dialog()
+            except Exception:
+                dlg.open = False
+            if dlg in self._page.overlay:
+                self._page.overlay.remove(dlg)
             self._page.update()
 
             # Notificación tipo Toast
@@ -239,15 +286,14 @@ class StatusHeader:
                 duration=5000,
             )
             self._page.show_dialog(sb)
+        finally:
+            # Recargar estado en hilo aparte: no bloquear el cierre del
+            # diálogo con las consultas de pendientes.
+            import threading as _th
 
-            # Recargar estado
-            self.load(self._page)
-        except Exception:
-            # Si algo falla en la notificación, al menos recargar estado
-            try:
-                self.load(self._page)
-            except Exception:
-                pass
+            _th.Thread(
+                target=lambda: self.load(self._page), daemon=True
+            ).start()
 
     def load(self, page: ft.Page):
         """Carga rol y estado de sincronización."""

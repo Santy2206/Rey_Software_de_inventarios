@@ -24,13 +24,21 @@ from datetime import datetime
 
 import flet as ft
 
-from src.services.bitacora_service import BitacoraService
+from src.services.bitacora_service import BitacoraService, ACCIONES_VALIDAS
 from src.ui.components.status_header import StatusHeader
 from src.ui.components.page_header import PageHeader
 
 _COLORES_ACCION = {
-    "LOGIN": ("#DBEAFE", "#1D4ED8"),
     "LOGIN_FALLIDO": ("#FEE2E2", "#B91C1C"),
+    "ELIMINACION": ("#FEE2E2", "#B91C1C"),
+    "CAMBIO_ROL": ("#EDE9FE", "#6D28D9"),
+    "ANULACION_VENTA": ("#FEE2E2", "#B91C1C"),
+    "AJUSTE_STOCK": ("#DBEAFE", "#1D4ED8"),
+    "BAJA_STOCK": ("#FEF3C7", "#B45309"),
+    "CAMBIO_PRECIO": ("#DCFCE7", "#15803D"),
+    "FUSION_PRODUCTO": ("#FFEDD5", "#9A3412"),
+    # Colores para registros antiguos con acciones fuera del catálogo
+    "LOGIN": ("#DBEAFE", "#1D4ED8"),
     "ENTRADA": ("#DCFCE7", "#15803D"),
     "SALIDA": ("#FEE2E2", "#B91C1C"),
     "BAJA": ("#FEF3C7", "#B45309"),
@@ -75,15 +83,10 @@ class _BitacoraView(ft.Container):
             width=180,
             label="Acción",
             value="Todas",
-            options=[
-                ft.DropdownOption(key="Todas", text="Todas"),
-                ft.DropdownOption(key="LOGIN", text="LOGIN"),
-                ft.DropdownOption(key="LOGIN_FALLIDO", text="LOGIN_FALLIDO"),
-                ft.DropdownOption(key="BODEGA", text="BODEGA"),
-                ft.DropdownOption(key="PRODUCTO", text="PRODUCTO"),
-                ft.DropdownOption(key="CLIENTE", text="CLIENTE"),
-                ft.DropdownOption(key="MOVIMIENTO", text="MOVIMIENTO"),
-                ft.DropdownOption(key="VENTA", text="VENTA"),
+            options=[ft.DropdownOption(key="Todas", text="Todas")]
+            + [
+                ft.DropdownOption(key=a, text=a)
+                for a in ACCIONES_VALIDAS
             ],
             on_select=self._aplicar_filtros,
         )
@@ -121,6 +124,7 @@ class _BitacoraView(ft.Container):
                 ft.DataColumn(ft.Text("Usuario")),
                 ft.DataColumn(ft.Text("Rol")),
                 ft.DataColumn(ft.Text("Acción")),
+                ft.DataColumn(ft.Text("Entidad")),
                 ft.DataColumn(ft.Text("Detalle")),
             ],
             rows=[],
@@ -272,13 +276,8 @@ class _BitacoraView(ft.Container):
         usuario = registro.get("usuario") or "—"
         rol = (registro.get("rol") or "—").capitalize()
         accion = registro.get("accion") or "—"
-
-        detalles = registro.get("detalles") or {}
-        descripcion = (
-            detalles.get("descripcion", "")
-            if isinstance(detalles, dict)
-            else str(detalles)
-        )
+        entidad = registro.get("entidad") or "—"
+        detalle = registro.get("detalle") or ""
 
         fondo, texto = _COLORES_ACCION.get(accion, ("#F3F4F6", "#374151"))
 
@@ -301,7 +300,8 @@ class _BitacoraView(ft.Container):
                         ),
                     )
                 ),
-                ft.DataCell(ft.Text(descripcion)),
+                ft.DataCell(ft.Text(entidad)),
+                ft.DataCell(ft.Text(detalle)),
             ]
         )
 

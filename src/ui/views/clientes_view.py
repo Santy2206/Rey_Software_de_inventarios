@@ -22,9 +22,6 @@ from src.services.clientes_service import ClientesService
 from src.ui.components.status_header import StatusHeader
 from src.ui.components.page_header import PageHeader
 
-_CARD_COLORS = ["#2563eb", "#16a34a", "#f5b400", "#c2185b", "#7c3aed"]
-
-
 def ClientesView():
     return ft.Column(controls=[_ClientesView()])
 
@@ -45,17 +42,54 @@ class _ClientesView(ft.Container):
         self._total_text = ft.Text("…", size=16, weight=ft.FontWeight.BOLD)
         self._fecha_text = ft.Text("…", size=16, weight=ft.FontWeight.BOLD)
 
-        # ── Fila de tarjetas + indicador de carga ────────────────────────────
-        self._cards_row = ft.Row(spacing=15, wrap=True)
+        # ── Buscador + tabla estilo Excel ────────────────────────────────────
+        self._buscador = ft.TextField(
+            label="Buscar",
+            hint_text="Escribe cédula, nombre o celular…",
+            prefix_icon=ft.Icons.SEARCH,
+            border_radius=10,
+            expand=True,
+            on_change=self._on_buscar,
+        )
+        self._tabla = ft.DataTable(
+            columns=[
+                ft.DataColumn(
+                    ft.Text("Cédula", weight=ft.FontWeight.BOLD, size=14, color="#222222")
+                ),
+                ft.DataColumn(
+                    ft.Text("Nombre completo", weight=ft.FontWeight.BOLD, size=14, color="#222222")
+                ),
+                ft.DataColumn(
+                    ft.Text("Celular", weight=ft.FontWeight.BOLD, size=14, color="#222222")
+                ),
+                ft.DataColumn(
+                    ft.Text("Acciones", weight=ft.FontWeight.BOLD, size=14, color="#222222")
+                ),
+            ],
+            rows=[],
+            border=ft.border.all(1, "#e0e0e0"),
+            border_radius=10,
+            bgcolor="white",
+            heading_row_color="#e0e0e0",
+            data_text_style=ft.TextStyle(color="#222222", size=14),
+            horizontal_lines=ft.border.BorderSide(1, "#e0e0e0"),
+            divider_thickness=0,
+            data_row_min_height=46,
+            width=float("inf"),
+        )
         self._loading_ring = ft.ProgressRing(width=32, height=32, visible=True)
         self._cards_area = ft.Column(
+            spacing=12,
+            expand=True,
+            scroll=ft.ScrollMode.AUTO,
             controls=[
                 ft.Row(
                     [self._loading_ring],
                     alignment=ft.MainAxisAlignment.CENTER,
                 ),
-                self._cards_row,
-            ]
+                ft.Row(controls=[self._buscador]),
+                self._tabla,
+            ],
         )
 
         # Campos del formulario
@@ -155,11 +189,58 @@ class _ClientesView(ft.Container):
     # Construcción de tarjetas dinámicas
     # ─────────────────────────────────────────────────────────────────────────
 
+    def _on_buscar(self, e=None):
+        """Filtra la tabla en vivo mientras se escribe."""
+        self._refrescar_cards()
+        if self.page:
+            self.page.update()
+
     def _refrescar_cards(self):
-        self._cards_row.controls.clear()
-        for i, cliente in enumerate(self._clientes):
-            color = _CARD_COLORS[i % len(_CARD_COLORS)]
-            self._cards_row.controls.append(self._cliente_card(cliente, color))
+        texto = (self._buscador.value or "").strip().upper()
+        self._tabla.rows.clear()
+        for cliente in self._clientes:
+            cedula = str(cliente.get("cedula") or "")
+            nombre = cliente.get("nombre") or "Sin nombre"
+            telefono = str(cliente.get("telefono") or "")
+            if texto and not (
+                texto in cedula.upper()
+                or texto in nombre.upper()
+                or texto in telefono.upper()
+            ):
+                continue
+            self._tabla.rows.append(
+                ft.DataRow(
+                    cells=[
+                        ft.DataCell(
+                            ft.Text(cedula or "—", color="#222222", size=14)
+                        ),
+                        ft.DataCell(
+                            ft.Text(nombre, color="#222222", size=14)
+                        ),
+                        ft.DataCell(
+                            ft.Text(telefono or "—", color="#222222", size=14)
+                        ),
+                        ft.DataCell(
+                            ft.Row(
+                                spacing=0,
+                                controls=[
+                                    ft.IconButton(
+                                        icon=ft.Icons.EDIT,
+                                        tooltip="Editar cliente",
+                                        on_click=lambda e, c=cliente: self._abrir_dialogo_editar(c),
+                                    ),
+                                    ft.IconButton(
+                                        icon=ft.Icons.DELETE_OUTLINE,
+                                        icon_color="red",
+                                        tooltip="Eliminar cliente",
+                                        on_click=lambda e, cid=cliente["id"], nom=nombre: self._eliminar_cliente(cid, nom),
+                                    ),
+                                ],
+                            )
+                        ),
+                    ]
+                )
+            )
 
     def _actualizar_stats(self):
         from datetime import datetime
@@ -185,89 +266,6 @@ class _ClientesView(ft.Container):
                     on_click=self._abrir_dialogo_crear,
                 ),
             ],
-        )
-
-    # ─────────────────────────────────────────────────────────────────────────
-    # Tarjeta individual de cliente
-    # ─────────────────────────────────────────────────────────────────────────
-
-    def _cliente_card(self, cliente: dict, color: str):
-        nombre = cliente.get("nombre", "Sin nombre")
-        telefono = cliente.get("telefono") or "—"
-        email = cliente.get("email") or "—"
-
-        return ft.Container(
-            width=280,
-            bgcolor="white",
-            border_radius=15,
-            padding=15,
-            shadow=ft.BoxShadow(
-                spread_radius=1, blur_radius=8, color=ft.Colors.BLACK12
-            ),
-            content=ft.Column(
-                spacing=10,
-                controls=[
-                    ft.Row(
-                        alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
-                        controls=[
-                            ft.Row(
-                                spacing=10,
-                                controls=[
-                                    ft.Container(
-                                        width=40,
-                                        height=40,
-                                        border_radius=10,
-                                        bgcolor="#f0f0f0",
-                                        alignment=ft.Alignment(0, 0),
-                                        content=ft.Icon(
-                                            ft.Icons.PERSON, color=color
-                                        ),
-                                    ),
-                                    ft.Column(
-                                        spacing=0,
-                                        controls=[
-                                            ft.Text(
-                                                nombre,
-                                                weight=ft.FontWeight.BOLD,
-                                                size=14,
-                                            ),
-                                            ft.Text(
-                                                email,
-                                                size=11,
-                                                color="grey",
-                                            ),
-                                        ],
-                                    ),
-                                ],
-                            ),
-                        ],
-                    ),
-                    ft.Text(f"Tel: {telefono}", size=12, color="grey"),
-                    ft.Row(
-                        spacing=8,
-                        controls=[
-                            ft.FilledButton(
-                                "Editar",
-                                icon=ft.Icons.EDIT,
-                                bgcolor=color,
-                                color="white",
-                                expand=True,
-                                on_click=lambda e, c=cliente: self._abrir_dialogo_editar(
-                                    c
-                                ),
-                            ),
-                            ft.IconButton(
-                                icon=ft.Icons.DELETE_OUTLINE,
-                                icon_color="red",
-                                tooltip="Eliminar cliente",
-                                on_click=lambda e, cid=cliente["id"], nom=nombre: self._eliminar_cliente(
-                                    cid, nom
-                                ),
-                            ),
-                        ],
-                    ),
-                ],
-            ),
         )
 
     # ─────────────────────────────────────────────────────────────────────────

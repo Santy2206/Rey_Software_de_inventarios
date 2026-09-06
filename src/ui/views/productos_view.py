@@ -19,15 +19,18 @@ Reglas:
 """
 
 import os
+import asyncio
+import re
+import subprocess
+import tempfile
 import threading
 import flet as ft
 
+from src.services.auth_service import AuthService
 from src.services.productos_service import ProductosService
 from src.services.bodegas_service import BodegasService
 from src.ui.components.status_header import StatusHeader
 from src.ui.components.page_header import PageHeader
-
-_CARD_COLORS = ["#f5b400", "#c2185b", "#2563eb", "#16a34a", "#7c3aed"]
 
 
 def ProductosView():
@@ -60,17 +63,17 @@ class _ProductosView(ft.Container):
             on_select=self._aplicar_filtro,
         )
 
-        # ── Fila de tarjetas + indicador de carga ───────────────────────────
-        self._cards_row = ft.Row(spacing=15, wrap=True)
+        # ── Tabla tipo Excel + indicador de carga ────────────────────────────
         self._loading_ring = ft.ProgressRing(width=32, height=32, visible=True)
         self._cards_area = ft.Column(
             controls=[
                 ft.Row(
                     [self._loading_ring],
                     alignment=ft.MainAxisAlignment.CENTER,
-                ),
-                self._cards_row,
-            ]
+                )
+            ],
+            spacing=10,
+            expand=True,
         )
 
         # Campos del formulario
@@ -80,10 +83,12 @@ class _ProductosView(ft.Container):
             border_radius=10,
         )
         self._campo_stock = ft.TextField(
-            label="Stock *",
+            label="Stock",
             value="0",
             keyboard_type=ft.KeyboardType.NUMBER,
             border_radius=10,
+            disabled=True,
+            visible=False,
         )
         self._campo_bodega = ft.Dropdown(
             label="Bodega *",
@@ -94,6 +99,13 @@ class _ProductosView(ft.Container):
         self._campo_codigo = ft.TextField(
             label="Código de fragancia *",
             hint_text='Ej: "F-001"',
+            border_radius=10,
+            visible=False,
+        )
+        self._campo_precio = ft.TextField(
+            label="Precio",
+            hint_text="Ej: 150000",
+            keyboard_type=ft.KeyboardType.NUMBER,
             border_radius=10,
             visible=False,
         )
@@ -110,6 +122,7 @@ class _ProductosView(ft.Container):
                     self._campo_stock,
                     self._campo_bodega,
                     self._campo_codigo,
+                    self._campo_precio,
                 ],
             ),
             actions=[
@@ -137,6 +150,7 @@ class _ProductosView(ft.Container):
             label="Ruta del archivo",
             hint_text="C:\\Users\\...\\productos.xlsx",
             border_radius=10,
+            expand=True,
         )
 
         self._dialog_importar = ft.AlertDialog(
@@ -147,7 +161,19 @@ class _ProductosView(ft.Container):
                 spacing=12,
                 controls=[
                     self._import_bodega,
-                    self._import_ruta,
+                    ft.Row(
+                        spacing=8,
+                        controls=[
+                            self._import_ruta,
+                            ft.ElevatedButton(
+                                "Examinar",
+                                icon=ft.Icons.FOLDER_OPEN,
+                                bgcolor="#2196F3",
+                                color="white",
+                                on_click=self._abrir_selector_archivo,
+                            ),
+                        ],
+                    ),
                 ],
             ),
             actions=[
@@ -166,6 +192,47 @@ class _ProductosView(ft.Container):
         self._snackbar = ft.SnackBar(
             content=ft.Text(""),
             show_close_icon=True,
+        )
+
+        # ── Diálogo de eliminación masiva
+        self._eliminar_password = ft.TextField(
+            label="Contraseña",
+            password=True,
+            can_reveal_password=True,
+            border_radius=10,
+        )
+        self._eliminar_verificacion = ft.TextField(
+            label="Escribe 'eliminar' para confirmar",
+            border_radius=10,
+        )
+
+        self._dialog_eliminar_todos = ft.AlertDialog(
+            modal=True,
+            title=ft.Text("Eliminar todos los productos"),
+            content=ft.Column(
+                tight=True,
+                spacing=12,
+                controls=[
+                    ft.Text(
+                        "Esta acción borrará todos los productos, incluyendo sus movimientos y detalles de venta asociados.",
+                        color="red",
+                        size=13,
+                    ),
+                    self._eliminar_password,
+                    self._eliminar_verificacion,
+                ],
+            ),
+            actions=[
+                ft.TextButton("Cancelar", on_click=self._cerrar_dialogo_eliminar_todos),
+                ft.ElevatedButton(
+                    "Eliminar todo",
+                    icon=ft.Icons.DELETE_FOREVER,
+                    bgcolor="#d32f2f",
+                    color="white",
+                    on_click=self._confirmar_eliminar_todos,
+                ),
+            ],
+            actions_alignment=ft.MainAxisAlignment.END,
         )
 
         # ── Layout principal ─────────────────────────────────────────────────
@@ -187,6 +254,7 @@ class _ProductosView(ft.Container):
     def did_mount(self):
         self.page.overlay.append(self._dialog)
         self.page.overlay.append(self._dialog_importar)
+        self.page.overlay.append(self._dialog_eliminar_todos)
         self.page.overlay.append(self._snackbar)
         self.page.update()
         self._status_header.load(self.page)
@@ -235,19 +303,238 @@ class _ProductosView(ft.Container):
         for p in self._productos:
             p["bodega_nombre"] = bodegas_por_id.get(p.get("bodega_id"), "—")
 
-        self._refrescar_cards()
+        self._ordenar_productos()
+        self._refrescar_tabla()
         self._actualizar_stats()
         self.page.update()  # UN solo update al final
 
     # ─────────────────────────────────────────────────────────────────────────
-    # Construcción de tarjetas dinámicas
+    # Ordenamiento y construcción de la tabla tipo Excel
     # ─────────────────────────────────────────────────────────────────────────
 
-    def _refrescar_cards(self):
-        self._cards_row.controls.clear()
-        for i, producto in enumerate(self._productos):
-            color = _CARD_COLORS[i % len(_CARD_COLORS)]
-            self._cards_row.controls.append(self._producto_card(producto, color))
+    @staticmethod
+    def _natural_key(texto: str):
+        """Devuelve una clave de ordenamiento natural (109M antes que 83M)."""
+        partes = []
+        for token in re.split(r"(\d+)", texto or ""):
+            if token.isdigit():
+                partes.append(int(token))
+            elif token:
+                partes.append(token.lower())
+        return tuple(partes)
+
+    def _ordenar_productos(self):
+        def _clave(p):
+            es_fragancia = self._es_bodega_fragancia(p.get("bodega_id"))
+            bodega = p.get("bodega_nombre", "").lower()
+            if es_fragancia:
+                return (bodega, self._natural_key(p.get("codigo") or ""))
+            return (bodega, p.get("nombre", "").lower())
+
+        self._productos.sort(key=_clave)
+
+    def _es_bodega_venta(self, bodega_id: str | None) -> bool:
+        """True si la bodega es una bodega de venta (nombre contiene VENTA)."""
+        if not bodega_id:
+            return False
+        for b in self._bodegas:
+            if b.get("id") == bodega_id:
+                return "VENTA" in (b.get("nombre") or "").upper()
+        return False
+
+    def _refrescar_tabla(self):
+        """Construye la(s) tabla(s): dos tablas lado a lado para fragancias M/F."""
+        self._loading_ring.visible = False
+
+        filtro_todas = not self._bodega_filtro or self._bodega_filtro == "todas"
+
+        def _visible(p):
+            # En "todas", las fragancias se muestran solo desde la bodega
+            # de VENTA (el mismo código existe también en Fragancias Bodega
+            # como stock maestro → evita verlo duplicado).
+            if filtro_todas and self._es_bodega_fragancia(p.get("bodega_id")):
+                return self._es_bodega_venta(p.get("bodega_id"))
+            return True
+
+        def _es_m(p):
+            return self._es_bodega_fragancia(p.get("bodega_id")) and (
+                (p.get("codigo") or "").upper().endswith("M")
+            )
+
+        def _es_f(p):
+            return self._es_bodega_fragancia(p.get("bodega_id")) and (
+                (p.get("codigo") or "").upper().endswith("F")
+            )
+
+        productos_m = [p for p in self._productos if _es_m(p) and _visible(p)]
+        productos_f = [p for p in self._productos if _es_f(p) and _visible(p)]
+        otros = [
+            p for p in self._productos
+            if not _es_m(p) and not _es_f(p) and _visible(p)
+        ]
+
+        nuevos_controles = []
+
+        grupos = []
+        if productos_m:
+            grupos.append(
+                ft.Column(
+                    expand=1,
+                    spacing=6,
+                    scroll=ft.ScrollMode.AUTO,
+                    controls=[
+                        ft.Text(
+                            "Masculino",
+                            size=16,
+                            weight=ft.FontWeight.BOLD,
+                            color="#222222",
+                        ),
+                        self._crear_data_table(productos_m),
+                    ],
+                )
+            )
+        if productos_f:
+            grupos.append(
+                ft.Column(
+                    expand=1,
+                    spacing=6,
+                    scroll=ft.ScrollMode.AUTO,
+                    controls=[
+                        ft.Text(
+                            "Femenino",
+                            size=16,
+                            weight=ft.FontWeight.BOLD,
+                            color="#222222",
+                        ),
+                        self._crear_data_table(productos_f),
+                    ],
+                )
+            )
+
+        if grupos:
+            nuevos_controles.append(
+                ft.Row(
+                    spacing=15,
+                    expand=True,
+                    vertical_alignment=ft.CrossAxisAlignment.START,
+                    controls=grupos,
+                )
+            )
+
+        if otros:
+            if grupos:
+                nuevos_controles.append(
+                    ft.Text(
+                        "Otros productos",
+                        size=16,
+                        weight=ft.FontWeight.BOLD,
+                        color="#222222",
+                    )
+                )
+            nuevos_controles.append(self._crear_data_table(otros))
+
+        if not nuevos_controles:
+            nuevos_controles.append(self._crear_data_table(self._productos))
+
+        self._cards_area.controls = nuevos_controles
+
+    def _crear_data_table(self, productos: list[dict]):
+        return ft.DataTable(
+            columns=[
+                ft.DataColumn(
+                    ft.Text(
+                        "Código",
+                        color="#222222",
+                        weight=ft.FontWeight.BOLD,
+                        size=14,
+                    )
+                ),
+                ft.DataColumn(
+                    ft.Text(
+                        "Nombre",
+                        color="#222222",
+                        weight=ft.FontWeight.BOLD,
+                        size=14,
+                    )
+                ),
+                ft.DataColumn(
+                    ft.Text(
+                        "Bodega",
+                        color="#222222",
+                        weight=ft.FontWeight.BOLD,
+                        size=14,
+                    )
+                ),
+                ft.DataColumn(
+                    ft.Text(
+                        "Acciones",
+                        color="#222222",
+                        weight=ft.FontWeight.BOLD,
+                        size=14,
+                    )
+                ),
+            ],
+            rows=[self._fila_producto(p) for p in productos],
+            border=ft.border.all(1, "#e0e0e0"),
+            border_radius=10,
+            bgcolor="white",
+            heading_row_color="#e0e0e0",
+            data_text_style=ft.TextStyle(color="#222222", size=14),
+            heading_text_style=ft.TextStyle(
+                color="#222222", size=14, weight=ft.FontWeight.BOLD
+            ),
+            horizontal_lines=ft.border.BorderSide(1, "#e0e0e0"),
+            vertical_lines=ft.border.BorderSide(1, "#e0e0e0"),
+            divider_thickness=0,
+            data_row_min_height=50,
+        )
+
+    def _fila_producto(self, producto: dict):
+        nombre = producto.get("nombre", "Sin nombre")
+        codigo = producto.get("codigo") or ""
+
+        return ft.DataRow(
+            cells=[
+                ft.DataCell(
+                    ft.Text(
+                        codigo or "—",
+                        color="#222222",
+                        size=14,
+                        weight=ft.FontWeight.BOLD,
+                    )
+                ),
+                ft.DataCell(ft.Text(nombre, color="#222222", size=14)),
+                ft.DataCell(
+                    ft.Text(
+                        producto.get("bodega_nombre") or "—",
+                        color="#555555",
+                        size=12,
+                    )
+                ),
+                ft.DataCell(
+                    ft.Row(
+                        spacing=0,
+                        controls=[
+                            ft.IconButton(
+                                icon=ft.Icons.EDIT,
+                                tooltip="Editar producto",
+                                on_click=lambda e, p=producto: self._abrir_dialogo_editar(
+                                    p
+                                ),
+                            ),
+                            ft.IconButton(
+                                icon=ft.Icons.DELETE_OUTLINE,
+                                icon_color="red",
+                                tooltip="Eliminar producto",
+                                on_click=lambda e, pid=producto["id"], nom=nombre: self._eliminar_producto(
+                                    pid, nom
+                                ),
+                            ),
+                        ],
+                    )
+                ),
+            ]
+        )
 
     def _actualizar_stats(self):
         from datetime import datetime
@@ -286,97 +573,14 @@ class _ProductosView(ft.Container):
                     color="black",
                     on_click=self._abrir_dialogo_crear,
                 ),
+                ft.ElevatedButton(
+                    "Eliminar todos",
+                    icon=ft.Icons.DELETE_FOREVER,
+                    bgcolor="#d32f2f",
+                    color="white",
+                    on_click=self._abrir_dialogo_eliminar_todos,
+                ),
             ],
-        )
-
-    # ─────────────────────────────────────────────────────────────────────────
-    # Tarjeta individual de producto
-    # ─────────────────────────────────────────────────────────────────────────
-
-    def _producto_card(self, producto: dict, color: str):
-        nombre = producto.get("nombre", "Sin nombre")
-        codigo = producto.get("codigo") or ""
-        bodega = producto.get("bodega_nombre", "—")
-        stock = producto.get("stock_actual", 0)
-
-        return ft.Container(
-            width=280,
-            bgcolor="white",
-            border_radius=15,
-            padding=15,
-            shadow=ft.BoxShadow(
-                spread_radius=1, blur_radius=8, color=ft.Colors.BLACK12
-            ),
-            content=ft.Column(
-                spacing=10,
-                controls=[
-                    ft.Row(
-                        alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
-                        controls=[
-                            ft.Row(
-                                spacing=10,
-                                controls=[
-                                    ft.Container(
-                                        width=40,
-                                        height=40,
-                                        border_radius=10,
-                                        bgcolor="#f0f0f0",
-                                        alignment=ft.Alignment(0, 0),
-                                        content=ft.Icon(
-                                            ft.Icons.INVENTORY_2, color=color
-                                        ),
-                                    ),
-                                    ft.Column(
-                                        spacing=0,
-                                        controls=[
-                                            ft.Text(
-                                                nombre,
-                                                weight=ft.FontWeight.BOLD,
-                                                size=14,
-                                            ),
-                                            ft.Text(
-                                                f"Stock: {stock}",
-                                                size=12,
-                                                weight=ft.FontWeight.BOLD,
-                                                color=color,
-                                            ),
-                                        ],
-                                    ),
-                                ],
-                            ),
-                        ],
-                    ),
-                    ft.Text(f"Bodega: {bodega}", size=12, color="grey"),
-                    (
-                        ft.Text(f"Código: {codigo}", size=12, color="grey")
-                        if codigo
-                        else ft.Container()
-                    ),
-                    ft.Row(
-                        spacing=8,
-                        controls=[
-                            ft.FilledButton(
-                                "Editar",
-                                icon=ft.Icons.EDIT,
-                                bgcolor=color,
-                                color="white",
-                                expand=True,
-                                on_click=lambda e, p=producto: self._abrir_dialogo_editar(
-                                    p
-                                ),
-                            ),
-                            ft.IconButton(
-                                icon=ft.Icons.DELETE_OUTLINE,
-                                icon_color="red",
-                                tooltip="Eliminar producto",
-                                on_click=lambda e, pid=producto["id"], nom=nombre: self._eliminar_producto(
-                                    pid, nom
-                                ),
-                            ),
-                        ],
-                    ),
-                ],
-            ),
         )
 
     # ─────────────────────────────────────────────────────────────────────────
@@ -429,7 +633,12 @@ class _ProductosView(ft.Container):
     def _aplicar_filtro(self, e=None):
         self._bodega_filtro = self._filtro_bodega.value
         self._loading_ring.visible = True
-        self._cards_row.controls.clear()
+        self._cards_area.controls = [
+            ft.Row(
+                [self._loading_ring],
+                alignment=ft.MainAxisAlignment.CENTER,
+            )
+        ]
         self.page.update()
         threading.Thread(target=self._cargar_productos, daemon=True).start()
 
@@ -462,10 +671,13 @@ class _ProductosView(ft.Container):
         self._producto_editando = None
         self._campo_nombre.value = ""
         self._campo_stock.value = "0"
-        self._campo_stock.disabled = False
+        self._campo_stock.disabled = True
+        self._campo_stock.visible = False
         self._campo_bodega.value = None
         self._campo_codigo.value = ""
         self._campo_codigo.visible = False
+        self._campo_precio.value = ""
+        self._campo_precio.visible = False
         self._dialog.title = ft.Text("Nuevo Producto")
         self._dialog.open = True
         self.page.update()
@@ -474,13 +686,16 @@ class _ProductosView(ft.Container):
         self._producto_editando = producto
         self._campo_nombre.value = producto.get("nombre", "")
         self._campo_codigo.value = producto.get("codigo") or ""
-        # stock_actual no se edita desde este diálogo — se muestra solo lectura
+        # stock_actual se muestra solo lectura en edición
         self._campo_stock.value = str(producto.get("stock_actual", "0"))
         self._campo_stock.disabled = True
+        self._campo_stock.visible = True
         self._campo_bodega.value = producto.get("bodega_id")
         self._campo_codigo.visible = self._es_bodega_fragancia(
             producto.get("bodega_id")
         )
+        self._campo_precio.value = str(producto.get("precio") or "0")
+        self._campo_precio.visible = True
         self._dialog.title = ft.Text(f"Editar: {producto.get('nombre')}")
         self._dialog.open = True
         self.page.update()
@@ -495,7 +710,6 @@ class _ProductosView(ft.Container):
 
     def _guardar_producto(self, e):
         nombre = (self._campo_nombre.value or "").strip()
-        stock_raw = (self._campo_stock.value or "").strip()
         bodega_id = self._campo_bodega.value
         codigo = (
             (self._campo_codigo.value or "").strip()
@@ -518,15 +732,6 @@ class _ProductosView(ft.Container):
             self.page.update()
             return
 
-        try:
-            stock = int(stock_raw) if stock_raw else 0
-        except ValueError:
-            self._mostrar_snack(
-                "⚠️ El stock debe ser un valor numérico.", error=True
-            )
-            self.page.update()
-            return
-
         self._cerrar_dialogo()
 
         def _worker():
@@ -535,15 +740,73 @@ class _ProductosView(ft.Container):
                     nombre=nombre,
                     bodega_id=bodega_id,
                     codigo=codigo,
-                    stock_actual=stock,
+                    stock_actual=0,
                 )
             else:
+                try:
+                    precio = float(
+                        (self._campo_precio.value or "0")
+                        .replace("$", "")
+                        .replace(",", "")
+                        .strip()
+                        or 0
+                    )
+                except ValueError:
+                    precio = 0.0
                 result = ProductosService.update(
                     producto_id=self._producto_editando["id"],
                     nombre=nombre,
                     bodega_id=bodega_id,
                     codigo=codigo,
+                    precio=precio,
                 )
+            self._mostrar_snack(
+                result.get("message", ""), error=not result.get("success")
+            )
+            if result.get("success"):
+                self._loading_ring.visible = True
+                self.page.update()
+                self._cargar_productos()
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+    def _abrir_dialogo_eliminar_todos(self, e=None):
+        self._eliminar_password.value = ""
+        self._eliminar_verificacion.value = ""
+        self._dialog_eliminar_todos.open = True
+        self.page.update()
+
+    def _cerrar_dialogo_eliminar_todos(self, e=None):
+        self._dialog_eliminar_todos.open = False
+        self.page.update()
+
+    def _confirmar_eliminar_todos(self, e=None):
+        password = (self._eliminar_password.value or "").strip()
+        verificacion = (self._eliminar_verificacion.value or "").strip().lower()
+
+        if not password:
+            self._mostrar_snack("Debe ingresar su contraseña", error=True)
+            self.page.update()
+            return
+
+        if verificacion != "eliminar":
+            self._mostrar_snack("Debe escribir 'eliminar' para confirmar", error=True)
+            self.page.update()
+            return
+
+        resultado_verificacion = AuthService.verificar_password_sesion(password)
+        if not resultado_verificacion.get("success"):
+            self._mostrar_snack(
+                resultado_verificacion.get("message", "Contraseña incorrecta"),
+                error=True,
+            )
+            self.page.update()
+            return
+
+        self._cerrar_dialogo_eliminar_todos()
+
+        def _worker():
+            result = ProductosService.eliminar_todos()
             self._mostrar_snack(
                 result.get("message", ""), error=not result.get("success")
             )
@@ -624,6 +887,127 @@ class _ProductosView(ft.Container):
 
     def _cerrar_dialogo_importar(self, e=None):
         self._dialog_importar.open = False
+        self.page.update()
+
+    def _abrir_selector_archivo(self, e=None):
+        """Abre el explorador de archivos nativo."""
+        if self.page.web:
+            self.page.run_task(self._seleccionar_archivo)
+            return
+
+        threading.Thread(
+            target=self._seleccionar_archivo_desktop, daemon=True
+        ).start()
+
+    def _seleccionar_archivo_desktop(self):
+        """Selector nativo en escritorio (hilo aparte para no congelar la UI)."""
+        try:
+            comando = [
+                "powershell.exe",
+                "-NoProfile",
+                "-Command",
+                (
+                    "Add-Type -AssemblyName System.Windows.Forms; "
+                    "$f = New-Object System.Windows.Forms.OpenFileDialog; "
+                    "$f.Filter = 'Excel y CSV (*.xlsx,*.csv)|*.xlsx;*.csv|"
+                    "Todos los archivos (*.*)|*.*'; "
+                    "$f.Title = 'Seleccionar archivo de productos'; "
+                    # Forma invisible TopMost como dueña: evita que el diálogo
+                    # quede detrás de la ventana de la app.
+                    "$owner = New-Object System.Windows.Forms.Form; "
+                    "$owner.TopMost = $true; "
+                    "$owner.StartPosition = 'CenterScreen'; "
+                    "$owner.ShowInTaskbar = $false; "
+                    "$owner.Width = 1; $owner.Height = 1; "
+                    "$owner.Opacity = 0; "
+                    "$owner.Show(); "
+                    "if ($f.ShowDialog($owner) -eq 'OK') { "
+                    "    Write-Output $f.FileName "
+                    "}; "
+                    "$owner.Close(); $owner.Dispose()"
+                ),
+            ]
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            result = subprocess.run(
+                comando,
+                capture_output=True,
+                text=True,
+                startupinfo=startupinfo,
+            )
+            ruta = result.stdout.strip()
+            if ruta:
+                self._import_ruta.value = ruta
+                if self.page:
+                    self.page.update()
+        except Exception as ex:
+            self._mostrar_snack(f"No se pudo abrir el selector: {ex}", error=True)
+
+    async def _seleccionar_archivo(self):
+        # En Flet 0.84 FilePicker es un Service: debe registrarse en
+        # page.services antes de usarse, si no falla con
+        # "Control must be added to the page first".
+        file_picker = ft.FilePicker()
+        self.page.services.append(file_picker)
+        self.page.update()
+        try:
+            archivos = await asyncio.wait_for(
+                file_picker.pick_files(
+                    dialog_title="Seleccionar archivo Excel o CSV",
+                    allow_multiple=False,
+                    file_type=ft.FilePickerFileType.CUSTOM,
+                    allowed_extensions=["xlsx", "csv"],
+                    with_data=True,
+                ),
+                timeout=60,
+            )
+        except asyncio.TimeoutError:
+            self._mostrar_snack(
+                "El selector de archivos tardó demasiado. Intente de nuevo.",
+                error=True,
+            )
+            return
+        except Exception as ex:
+            self._mostrar_snack(
+                f"No se pudo abrir el selector de archivos: {ex}", error=True
+            )
+            return
+        finally:
+            try:
+                self.page.services.remove(file_picker)
+            except Exception:
+                pass
+
+        if not archivos:
+            return
+
+        archivo = archivos[0]
+
+        if archivo.path:
+            self._import_ruta.value = archivo.path
+        elif archivo.bytes:
+            extension = (
+                archivo.name.split(".")[-1].lower()
+                if "." in archivo.name
+                else "xlsx"
+            )
+            try:
+                with tempfile.NamedTemporaryFile(
+                    delete=False, suffix=f".{extension}"
+                ) as tmp:
+                    tmp.write(archivo.bytes)
+                    self._import_ruta.value = tmp.name
+            except Exception as ex:
+                self._mostrar_snack(
+                    f"No se pudo guardar el archivo temporal: {ex}", error=True
+                )
+                return
+        else:
+            self._mostrar_snack(
+                "No se obtuvo la ruta ni el contenido del archivo.", error=True
+            )
+            return
+
         self.page.update()
 
     def _importar_excel(self, e=None):

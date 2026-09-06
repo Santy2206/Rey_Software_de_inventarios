@@ -81,10 +81,9 @@ class AuthService:
                 BitacoraService.registrar(
                     user_data["id"],
                     "LOGIN_FALLIDO",
-                    {
-                        "descripcion": f"Intento fallido de login: {username_typed}",
-                        "motivo": "Contraseña incorrecta",
-                    },
+                    entidad="usuario",
+                    entidad_id=user_data["id"],
+                    detalle=f"Intento fallido de login: {username_typed}",
                 )
                 return {
                     "success": False,
@@ -98,15 +97,6 @@ class AuthService:
                 user_id=user_data["id"],
                 rol=user_data["rol"],
                 name=user_data["name"],
-            )
-
-            BitacoraService.registrar(
-                user_data["id"],
-                "LOGIN",
-                {
-                    "descripcion": f"Login exitoso: {username_typed}",
-                    "rol": user_data["rol"],
-                },
             )
 
             print("Login exitoso!")

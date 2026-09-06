@@ -23,6 +23,8 @@ Estrategia de reintento:
       consumo de red innecesario.
 """
 
+import queue
+import threading
 import traceback
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -30,6 +32,40 @@ from uuid import UUID
 
 from src.core.local_db import get_cursor, run_query
 from src.core.supabase_client import supabase
+
+# Máximo de segundos que puede tardar un upsert individual a Supabase.
+# Si se supera, la fila se marca como fallida y el sync continúa:
+# evita que un request colgado deje el diálogo de progreso "bugueado".
+_UPSERT_TIMEOUT_SEGUNDOS = 60
+
+
+def _upsert_con_timeout(payload: dict, tabla: str):
+    """
+    Ejecuta supabase.table(tabla).upsert(payload) con timeout duro.
+
+    Retorna el objeto respuesta de Supabase.
+    Lanza TimeoutError si el request no responde en el límite.
+    """
+    cola: queue.Queue = queue.Queue(maxsize=1)
+
+    def _llamar():
+        try:
+            resp = supabase.table(tabla).upsert(payload).execute()
+            cola.put(("ok", resp))
+        except Exception as e:  # noqa: BLE001
+            cola.put(("error", e))
+
+    threading.Thread(target=_llamar, daemon=True).start()
+    try:
+        estado, valor = cola.get(timeout=_UPSERT_TIMEOUT_SEGUNDOS)
+    except queue.Empty:
+        raise TimeoutError(
+            f"Upsert a '{tabla}' no respondió en "
+            f"{_UPSERT_TIMEOUT_SEGUNDOS}s (conexión con Supabase?)"
+        )
+    if estado == "error":
+        raise valor
+    return valor
 
 
 # Orden de sincronización respetando FKs (padres primero).
@@ -51,6 +87,11 @@ _TABLAS_A_SYNC = [
 # Columnas de control que no deben enviarse a Supabase.
 _COLUMNAS_CONTROL = {"dirty", "synced_at"}
 
+# Columnas permitidas por tabla en Supabase. Si una tabla no aparece aquí,
+# se envían todas las columnas menos las de control.
+_COLUMNAS_PERMITIDAS = {
+}
+
 
 def _serializar_valor(valor):
     """Convierte tipos de PostgreSQL en valores serializables por Supabase."""
@@ -69,12 +110,13 @@ def _serializar_valor(valor):
     return valor
 
 
-def _preparar_fila(fila: dict) -> dict:
+def _preparar_fila(fila: dict, tabla: str) -> dict:
     """Convierte una fila RealDictCursor en un dict listo para upsert."""
+    permitidas = _COLUMNAS_PERMITIDAS.get(tabla)
     return {
         k: _serializar_valor(v)
         for k, v in fila.items()
-        if k not in _COLUMNAS_CONTROL
+        if k not in _COLUMNAS_CONTROL and (permitidas is None or k in permitidas)
     }
 
 
@@ -140,29 +182,59 @@ class SyncService:
             }
 
     @staticmethod
-    def _upsert_tabla(tabla: str, solo_dirty: bool = True) -> dict:
+    def _contar_filas(tabla: str, solo_dirty: bool) -> int:
+        """Cuenta las filas que se van a subir de una tabla."""
+        try:
+            tiene_dirty = SyncService._tabla_tiene_dirty(tabla)
+            if solo_dirty and tiene_dirty:
+                fila = run_query(
+                    f"SELECT COUNT(*) AS n FROM {tabla} WHERE dirty = true",
+                    fetch_one=True,
+                )
+            else:
+                fila = run_query(
+                    f"SELECT COUNT(*) AS n FROM {tabla}",
+                    fetch_one=True,
+                )
+            return fila["n"] if fila else 0
+        except Exception:
+            return 0
+
+    @staticmethod
+    def _upsert_tabla(
+        tabla: str, solo_dirty: bool = True, on_row=None
+    ) -> dict:
         """
         Sube filas de una tabla a Supabase.
 
         Si solo_dirty=True, solo filas dirty.
         Si la tabla no tiene dirty, sube todas (caso usuarios).
+
+        on_row: callback opcional llamado tras procesar cada fila con la
+        tabla como argumento.
         """
         tiene_dirty = SyncService._tabla_tiene_dirty(tabla)
-        if solo_dirty and tiene_dirty:
-            filas = run_query(f"SELECT * FROM {tabla} WHERE dirty = true ORDER BY id")
-        else:
-            filas = run_query(f"SELECT * FROM {tabla} ORDER BY id")
+        try:
+            if solo_dirty and tiene_dirty:
+                filas = run_query(f"SELECT * FROM {tabla} WHERE dirty = true ORDER BY id")
+            else:
+                filas = run_query(f"SELECT * FROM {tabla} ORDER BY id")
+        except Exception as e:
+            error_msg = str(e)
+            print(f"   No se pudo leer {tabla}: {error_msg}")
+            return {"subidos": 0, "fallidos": 0, "error": error_msg}
 
         if not filas:
-            return {"subidos": 0, "fallidos": 0}
+            return {"subidos": 0, "fallidos": 0, "error": None}
 
         subidos = 0
         fallidos = 0
+        primer_error = None
         for fila in filas:
             fila_id = fila.get("id")
             try:
-                payload = _preparar_fila(fila)
-                resp = supabase.table(tabla).upsert(payload).execute()
+                payload = _preparar_fila(fila, tabla)
+                resp = _upsert_con_timeout(payload, tabla)
 
                 if resp is None or not getattr(resp, "data", None):
                     raise Exception(f"Respuesta inesperada de Supabase: {resp}")
@@ -180,16 +252,27 @@ class SyncService:
                 subidos += 1
             except Exception as e:
                 error_msg = str(e)
+                if primer_error is None:
+                    primer_error = error_msg
                 print(f"   Fallo al sincronizar {tabla} id={fila_id}: {error_msg}")
-                print(traceback.format_exc())
                 fallidos += 1
+            finally:
+                if on_row:
+                    try:
+                        on_row(tabla)
+                    except Exception:
+                        pass
 
-        return {"subidos": subidos, "fallidos": fallidos}
+        return {"subidos": subidos, "fallidos": fallidos, "error": primer_error}
 
     @staticmethod
-    def sync_pendientes():
+    def sync_pendientes(on_progress=None):
         """
         Sube a Supabase todas las filas dirty de las tablas configuradas.
+
+        Parámetros:
+            on_progress: callback opcional llamado por cada fila procesada
+                         con (enviados, total, tabla).
 
         Orden:
             1. tablas base (usuarios) para satisfacer FKs
@@ -204,10 +287,30 @@ class SyncService:
         total_fallidos = 0
 
         try:
+            # Total de filas a procesar (para progreso)
+            total = 0
+            for tabla in _TABLAS_BASE:
+                total += SyncService._contar_filas(tabla, solo_dirty=False)
+            for tabla in _TABLAS_A_SYNC:
+                total += SyncService._contar_filas(tabla, solo_dirty=True)
+
+            enviados = 0
+
+            def _on_row(tabla):
+                nonlocal enviados
+                enviados += 1
+                if on_progress:
+                    try:
+                        on_progress(enviados, total, tabla)
+                    except Exception:
+                        pass
+
             # 1) Bases (siempre, para que existan en la nube)
             for tabla in _TABLAS_BASE:
                 print(f" Sincronizando tabla base: {tabla}")
-                r = SyncService._upsert_tabla(tabla, solo_dirty=False)
+                r = SyncService._upsert_tabla(
+                    tabla, solo_dirty=False, on_row=_on_row
+                )
                 resumen[tabla] = r
                 total_subidos += r["subidos"]
                 total_fallidos += r["fallidos"]
@@ -215,7 +318,9 @@ class SyncService:
             # 2) Tablas con dirty en orden de FKs
             for tabla in _TABLAS_A_SYNC:
                 print(f" Sincronizando tabla: {tabla}")
-                r = SyncService._upsert_tabla(tabla, solo_dirty=True)
+                r = SyncService._upsert_tabla(
+                    tabla, solo_dirty=True, on_row=_on_row
+                )
                 resumen[tabla] = r
                 total_subidos += r["subidos"]
                 total_fallidos += r["fallidos"]
@@ -224,6 +329,14 @@ class SyncService:
                 f"Sincronización completada: {total_subidos} subidos, "
                 f"{total_fallidos} fallidos"
             )
+            if total_fallidos > 0:
+                errores = []
+                for tabla, r in resumen.items():
+                    if r.get("fallidos") and r.get("error"):
+                        errores.append(f"{tabla}: {r['error'][:100]}")
+                if errores:
+                    mensaje += ". Errores: " + " | ".join(errores[:3])
+
             return {
                 "success": total_fallidos == 0,
                 "message": mensaje,
@@ -241,12 +354,14 @@ class SyncService:
             }
 
     @staticmethod
-    def sync_pendientes_background(callback=None):
+    def sync_pendientes_background(callback=None, on_progress=None):
         """
         Ejecuta sync_pendientes en un hilo de fondo.
 
         Parámetros:
             callback: función opcional que recibe el resultado del sync.
+            on_progress: función opcional llamada por cada fila procesada
+                         con (enviados, total, tabla).
 
         Retorna:
             threading.Thread: el hilo iniciado.
@@ -254,7 +369,7 @@ class SyncService:
         import threading
 
         def _worker():
-            resultado = SyncService.sync_pendientes()
+            resultado = SyncService.sync_pendientes(on_progress=on_progress)
             if callback:
                 callback(resultado)
             return resultado

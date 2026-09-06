@@ -25,6 +25,7 @@ class _BodegasView(ft.Container):
         self._bodegas: list[dict] = []
         self._bodega_editando: dict | None = None
         self._bodega_pendiente_eliminar: dict | None = None
+        self._bodega_pendiente_duplicar: dict | None = None
         self._overlays_registrados = False
 
         # ── Controles de texto actualizables ───────────────────────────────
@@ -33,16 +34,32 @@ class _BodegasView(ft.Container):
 
         # ── Fila de tarjetas + indicador de carga ───────────────────────────
         self._cards_row = ft.Row(spacing=15, wrap=True)
+        self._cards_row_sec = ft.Row(spacing=15, wrap=True)
         self._loading_ring = ft.ProgressRing(width=32, height=32, visible=True)
         self._cards_area = ft.Column(
+            spacing=14,
             controls=[
                 # Mientras carga: spinner centrado
                 ft.Row(
                     [self._loading_ring],
                     alignment=ft.MainAxisAlignment.CENTER,
                 ),
+                ft.Text(
+                    "Principales",
+                    size=15,
+                    weight=ft.FontWeight.BOLD,
+                    color="#3730A3",
+                ),
                 self._cards_row,
-            ]
+                ft.Divider(height=10),
+                ft.Text(
+                    "Secundarias",
+                    size=15,
+                    weight=ft.FontWeight.BOLD,
+                    color="#6B7280",
+                ),
+                self._cards_row_sec,
+            ],
         )
 
         # Campos del formulario (reutilizados al abrir diálogos)
@@ -52,9 +69,22 @@ class _BodegasView(ft.Container):
             border_radius=10,
             width=360,
         )
-        self._campo_tipo = ft.TextField(
+        self._campo_tipo = ft.Dropdown(
             label="Tipo",
-            hint_text='Ej: "Fragancias", "General"',
+            options=[
+                ft.DropdownOption(key="General", text="General"),
+                ft.DropdownOption(key="Fragancias", text="Fragancias"),
+            ],
+            border_radius=10,
+            width=360,
+        )
+        self._campo_principal = ft.Checkbox(
+            label="Bodega principal",
+            value=False,
+        )
+        self._campo_cuentas = ft.TextField(
+            label="Cuentas Elisa vinculadas",
+            hint_text='Ej: "41353804, 41353802" o "Solo ingresos y traslados"',
             border_radius=10,
             width=360,
         )
@@ -63,6 +93,14 @@ class _BodegasView(ft.Container):
             hint_text="Confirme su identidad para editar",
             password=True,
             can_reveal_password=True,
+            border_radius=10,
+            width=360,
+        )
+
+        # Campo para duplicar bodega
+        self._campo_nombre_duplicar = ft.TextField(
+            label="Nombre de la nueva bodega",
+            hint_text='Ej: "Copia de Fragancias Bodega"',
             border_radius=10,
             width=360,
         )
@@ -104,6 +142,7 @@ class _BodegasView(ft.Container):
         # Diálogos se construyen al abrir (Flet refresca mejor así)
         self._dialog = None
         self._dialog_eliminar = None
+        self._dialog_duplicar = None
 
         # ── SnackBar
         self._snackbar = ft.SnackBar(
@@ -221,9 +260,15 @@ class _BodegasView(ft.Container):
 
     def _refrescar_cards(self):
         self._cards_row.controls.clear()
-        for i, bodega in enumerate(self._bodegas):
+        self._cards_row_sec.controls.clear()
+        principales = [b for b in self._bodegas if b.get("es_principal")]
+        secundarias = [b for b in self._bodegas if not b.get("es_principal")]
+        for i, bodega in enumerate(principales):
             color = _CARD_COLORS[i % len(_CARD_COLORS)]
             self._cards_row.controls.append(self._warehouse_card(bodega, color))
+        for i, bodega in enumerate(secundarias):
+            color = _CARD_COLORS[i % len(_CARD_COLORS)]
+            self._cards_row_sec.controls.append(self._warehouse_card(bodega, color))
 
     def _actualizar_stats(self):
         from datetime import datetime
@@ -261,6 +306,7 @@ class _BodegasView(ft.Container):
     def _warehouse_card(self, bodega: dict, color: str):
         nombre = bodega.get("nombre", "Sin nombre")
         tipo = bodega.get("tipo", "—")
+        cuentas = (bodega.get("cuentas_elisa") or "").strip()
 
         return ft.Container(
             width=260,
@@ -315,6 +361,11 @@ class _BodegasView(ft.Container):
                     ft.Container(
                         height=8, border_radius=10, bgcolor=color, opacity=0.25
                     ),
+                    ft.Text(
+                        f"Cuentas Elisa: {cuentas}" if cuentas else "Cuentas Elisa: —",
+                        size=11,
+                        color="#4B5563",
+                    ),
                     ft.Row(
                         spacing=8,
                         controls=[
@@ -329,6 +380,14 @@ class _BodegasView(ft.Container):
                                 ),
                                 #  b=bodega captura el valor correcto en el closure
                                 on_click=lambda e, b=bodega: self._abrir_dialogo_editar(
+                                    b
+                                ),
+                            ),
+                            ft.IconButton(
+                                icon=ft.Icons.CONTENT_COPY,
+                                icon_color=color,
+                                tooltip="Duplicar bodega y productos",
+                                on_click=lambda e, b=bodega: self._abrir_dialogo_duplicar(
                                     b
                                 ),
                             ),
@@ -437,7 +496,8 @@ class _BodegasView(ft.Container):
     def _abrir_dialogo_crear(self, e=None):
         self._bodega_editando = None
         self._campo_nombre.value = ""
-        self._campo_tipo.value = ""
+        self._campo_tipo.value = None
+        self._campo_principal.value = False
         self._campo_password_editar.value = ""
         self._campo_password_editar.error_text = None
         self._dialog = ft.AlertDialog(
@@ -450,6 +510,7 @@ class _BodegasView(ft.Container):
                 controls=[
                     self._campo_nombre,
                     self._campo_tipo,
+                    self._campo_principal,
                     self._error_dialogo,
                 ],
             ),
@@ -469,7 +530,12 @@ class _BodegasView(ft.Container):
     def _abrir_dialogo_editar(self, bodega: dict):
         self._bodega_editando = bodega
         self._campo_nombre.value = bodega.get("nombre", "")
-        self._campo_tipo.value = bodega.get("tipo", "")
+        tipo_actual = (bodega.get("tipo") or "").strip()
+        self._campo_tipo.value = (
+            tipo_actual if tipo_actual in ("General", "Fragancias") else None
+        )
+        self._campo_principal.value = bool(bodega.get("es_principal"))
+        self._campo_cuentas.value = bodega.get("cuentas_elisa") or ""
         self._campo_password_editar.value = ""
         self._campo_password_editar.error_text = None
         self._dialog = ft.AlertDialog(
@@ -482,6 +548,8 @@ class _BodegasView(ft.Container):
                 controls=[
                     self._campo_nombre,
                     self._campo_tipo,
+                    self._campo_principal,
+                    self._campo_cuentas,
                     self._ayuda_seguridad_editar,
                     self._campo_password_editar,
                     self._error_dialogo,
@@ -506,6 +574,72 @@ class _BodegasView(ft.Container):
         self._campo_password_editar.value = ""
         self._campo_password_editar.error_text = None
         self._set_error_dialogo("")
+
+    def _abrir_dialogo_duplicar(self, bodega: dict):
+        self._bodega_pendiente_duplicar = bodega
+        self._campo_nombre_duplicar.value = f"Copia de {bodega.get('nombre', '')}"
+        self._dialog_duplicar = ft.AlertDialog(
+            modal=True,
+            title=ft.Text(f"Duplicar: {bodega.get('nombre')}"),
+            content=ft.Column(
+                tight=True,
+                spacing=12,
+                width=360,
+                controls=[
+                    ft.Text(
+                        "Se creará una nueva bodega con los mismos productos.",
+                        size=13,
+                        color="grey",
+                    ),
+                    self._campo_nombre_duplicar,
+                    self._error_dialogo,
+                ],
+            ),
+            actions=[
+                ft.TextButton("Cancelar", on_click=self._cerrar_dialogo_duplicar),
+                ft.ElevatedButton(
+                    "Duplicar",
+                    bgcolor="#2196F3",
+                    color="white",
+                    on_click=self._confirmar_duplicar_bodega,
+                ),
+            ],
+            actions_alignment=ft.MainAxisAlignment.END,
+        )
+        self._mostrar_dialogo(self._dialog_duplicar)
+
+    def _cerrar_dialogo_duplicar(self, e=None):
+        self._ocultar_dialogo(self._dialog_duplicar)
+        self._dialog_duplicar = None
+        self._bodega_pendiente_duplicar = None
+        self._campo_nombre_duplicar.value = ""
+        self._set_error_dialogo("")
+
+    def _confirmar_duplicar_bodega(self, e=None):
+        bodega = self._bodega_pendiente_duplicar
+        if not bodega:
+            self._cerrar_dialogo_duplicar()
+            return
+
+        nuevo_nombre = (self._campo_nombre_duplicar.value or "").strip()
+        bodega_id = str(bodega["id"])
+        self._cerrar_dialogo_duplicar()
+
+        def _worker():
+            try:
+                result = BodegasService.duplicar(
+                    bodega_id=bodega_id,
+                    nuevo_nombre=nuevo_nombre,
+                )
+            except Exception as ex:
+                result = {"success": False, "message": f"Error al duplicar: {ex}"}
+            self._mostrar_snack(result["message"], error=not result["success"])
+            if result["success"]:
+                self._loading_ring.visible = True
+                self.page.update()
+                self._cargar_bodegas()
+
+        threading.Thread(target=_worker, daemon=True).start()
 
     def _abrir_dialogo_eliminar(self, bodega: dict):
         self._bodega_pendiente_eliminar = bodega
@@ -562,6 +696,7 @@ class _BodegasView(ft.Container):
     def _guardar_bodega(self, e):
         nombre = (self._campo_nombre.value or "").strip()
         tipo = (self._campo_tipo.value or "").strip()
+        es_principal = bool(self._campo_principal.value)
 
         if not nombre or not tipo:
             self._set_error_dialogo("Nombre y Tipo son obligatorios.")
@@ -581,12 +716,16 @@ class _BodegasView(ft.Container):
         def _worker():
             try:
                 if editando is None:
-                    result = BodegasService.create(nombre=nombre, tipo=tipo)
+                    result = BodegasService.create(
+                        nombre=nombre, tipo=tipo, es_principal=es_principal
+                    )
                 else:
                     result = BodegasService.update(
                         bodega_id=str(editando["id"]),
                         nombre=nombre,
                         tipo=tipo,
+                        es_principal=es_principal,
+                        cuentas_elisa=self._campo_cuentas.value or None,
                     )
             except Exception as ex:
                 result = {"success": False, "message": f"Error al guardar: {ex}"}

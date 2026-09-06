@@ -30,9 +30,11 @@ class Sidebar(ft.Container):
             self._item(ft.Icons.INVENTORY_2, "Productos", "PRODUCTOS"),
             self._item(ft.Icons.SWAP_HORIZ, "Movimientos", "MOVIMIENTOS"),
             self._item(ft.Icons.SHOPPING_CART, "Ventas", "VENTAS"),
+            self._item(ft.Icons.FACT_CHECK, "Revisión ventas", "REVISION_VENTAS"),
             self._item(ft.Icons.PEOPLE, "Clientes", "CLIENTES"),
             self._item(ft.Icons.BAR_CHART, "Reportes", "REPORTES"),
             self._item(ft.Icons.DESCRIPTION, "Bitácora", "BITACORA"),
+            self._item(ft.Icons.MANAGE_ACCOUNTS, "Usuarios", "USUARIOS"),
             ft.Container(expand=True),
             ft.ElevatedButton(
                 "Cerrar sesión",

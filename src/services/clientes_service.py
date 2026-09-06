@@ -16,12 +16,20 @@ from src.services.auth_service import AuthService
 from src.services.bitacora_service import BitacoraService
 
 
-def _registrar_bitacora_clientes(detalle: dict):
+def _registrar_bitacora_clientes(
+    accion: str, entidad_id: str, detalle: str
+):
     """Registra en bitácora sin afectar la operación principal."""
     try:
         usuario_id = AuthService.get_usuario_id()
         if usuario_id:
-            BitacoraService.registrar(usuario_id, "CLIENTE", detalle)
+            BitacoraService.registrar(
+                usuario_id,
+                accion,
+                entidad="cliente",
+                entidad_id=entidad_id,
+                detalle=detalle,
+            )
     except Exception as e:
         print(f" Error al registrar bitácora de cliente: {e}")
 
@@ -34,8 +42,12 @@ class ClientesService:
         print("--- Trayendo todos los clientes ---")
         try:
             data = run_query(
-                "SELECT id, nombre, telefono, email, creado_en "
-                "FROM clientes ORDER BY nombre"
+                """
+                SELECT id, nombre, telefono, email, cedula,
+                       codigo_elisa, es_generico, creado_en
+                FROM clientes
+                ORDER BY nombre
+                """
             )
 
             if not data:
@@ -83,16 +95,6 @@ class ClientesService:
 
             if not cliente:
                 return {"success": False, "message": "No se pudo crear el cliente"}
-
-            _registrar_bitacora_clientes(
-                {
-                    "descripcion": f"Cliente '{nombre_limpio}' creado",
-                    "cliente_id": cliente["id"],
-                    "nombre": nombre_limpio,
-                    "telefono": telefono_limpio,
-                    "email": email_limpio,
-                }
-            )
 
             print(f" Cliente '{nombre_limpio}' creado con exito")
             return {
@@ -181,16 +183,6 @@ class ClientesService:
                     "message": "Cliente no encontrado para actualizar",
                 }
 
-            _registrar_bitacora_clientes(
-                {
-                    "descripcion": f"Cliente '{nombre_limpio}' actualizado",
-                    "cliente_id": cliente_id,
-                    "nombre": nombre_limpio,
-                    "telefono": telefono_limpio,
-                    "email": email_limpio,
-                }
-            )
-
             print(f" Cliente actualizado con éxito")
             return {
                 "success": True,
@@ -224,10 +216,9 @@ class ClientesService:
                 }
 
             _registrar_bitacora_clientes(
-                {
-                    "descripcion": "Cliente eliminado",
-                    "cliente_id": cliente_id,
-                }
+                "ELIMINACION",
+                entidad_id=cliente_id,
+                detalle="Cliente eliminado",
             )
 
             print(f" Cliente eliminado con éxito")

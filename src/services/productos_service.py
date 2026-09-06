@@ -29,12 +29,20 @@ from src.services.auth_service import AuthService
 from src.services.bitacora_service import BitacoraService
 
 
-def _registrar_bitacora_productos(detalle: dict):
+def _registrar_bitacora_productos(
+    accion: str, entidad_id: str, detalle: str
+):
     """Registra en bitácora sin afectar la operación principal."""
     try:
         usuario_id = AuthService.get_usuario_id()
         if usuario_id:
-            BitacoraService.registrar(usuario_id, "PRODUCTO", detalle)
+            BitacoraService.registrar(
+                usuario_id,
+                accion,
+                entidad="producto",
+                entidad_id=entidad_id,
+                detalle=detalle,
+            )
     except Exception as e:
         print(f" Error al registrar bitácora de producto: {e}")
 
@@ -202,15 +210,6 @@ class ProductosService:
             if not producto:
                 return {"success": False, "message": "No se pudo crear el producto"}
 
-            _registrar_bitacora_productos(
-                {
-                    "descripcion": f"Producto '{nombre}' creado",
-                    "producto_id": producto["id"],
-                    "nombre": nombre,
-                    "bodega_id": bodega_id,
-                }
-            )
-
             print(f" Producto '{nombre}' creado con éxito")
             return {
                 "success": True,
@@ -252,6 +251,15 @@ class ProductosService:
         """
         print(f"--- Actualizando producto id: {producto_id} ---")
         try:
+            anterior = run_query(
+                "SELECT precio FROM productos WHERE id = %s",
+                (producto_id,),
+                fetch_one=True,
+            )
+            precio_anterior = (
+                float(anterior["precio"]) if anterior else None
+            )
+
             producto = run_query(
                 """
                 UPDATE productos
@@ -274,14 +282,15 @@ class ProductosService:
                     "message": "Producto no encontrado para actualizar",
                 }
 
-            _registrar_bitacora_productos(
-                {
-                    "descripcion": f"Producto '{nombre}' actualizado",
-                    "producto_id": producto_id,
-                    "nombre": nombre,
-                    "bodega_id": bodega_id,
-                }
-            )
+            if precio_anterior is not None and float(precio or 0) != precio_anterior:
+                _registrar_bitacora_productos(
+                    "CAMBIO_PRECIO",
+                    entidad_id=producto_id,
+                    detalle=(
+                        f"Precio de '{nombre}': "
+                        f"${precio_anterior:,.0f} → ${float(precio or 0):,.0f}"
+                    ),
+                )
 
             print(f" Producto actualizado con éxito")
             return {
@@ -330,8 +339,8 @@ class ProductosService:
                 res = ProductosService.get_all()
 
             columnas_salida = [
-                "nombre",
                 "codigo",
+                "nombre",
                 "stock",
             ]
 
@@ -341,8 +350,8 @@ class ProductosService:
                 for p in productos:
                     filas.append(
                         {
-                            "nombre": p.get("nombre", ""),
                             "codigo": p.get("codigo", ""),
+                            "nombre": p.get("nombre", ""),
                             "stock": int(p.get("stock_actual", 0) or 0),
                         }
                     )
@@ -354,8 +363,8 @@ class ProductosService:
                 df_ejemplo = pd.DataFrame(
                     [
                         {
-                            "nombre": "Perfume Floral 100ml",
                             "codigo": "F-001",
+                            "nombre": "Perfume Floral 100ml",
                             "stock": 15,
                         }
                     ],
@@ -382,14 +391,6 @@ class ProductosService:
             df.to_excel(ruta_salida, index=False, engine="openpyxl")
             _aplicar_estilos_excel(ruta_salida)
 
-            _registrar_bitacora_productos(
-                {
-                    "descripcion": f"Exportación de {len(df)} productos a Excel",
-                    "bodega_id": bodega_id,
-                    "archivo": ruta_salida,
-                }
-            )
-
             return {
                 "success": True,
                 "message": f"Exportados {len(df)} productos",
@@ -404,6 +405,71 @@ class ProductosService:
             return {
                 "success": False,
                 "message": f"Error al exportar productos: {error_msg}",
+            }
+
+    @staticmethod
+    def eliminar_todos(bodega_id: str | None = None):
+        """
+        Elimina todos los productos. Si se indica bodega_id, solo los de esa bodega.
+
+        Nota: también elimina los detalles de venta y movimientos asociados
+        para evitar errores de claves foráneas.
+        """
+        print("--- Eliminando todos los productos ---")
+        try:
+            from src.core.local_db import get_cursor
+
+            with get_cursor() as cur:
+                where = "WHERE bodega_id = %s" if bodega_id else ""
+                params = (bodega_id,) if bodega_id else ()
+
+                cur.execute(f"SELECT id FROM productos {where}", params)
+                rows = cur.fetchall()
+                ids = [r["id"] for r in rows]
+
+                if not ids:
+                    return {
+                        "success": True,
+                        "message": "No hay productos para eliminar",
+                        "data": {"eliminados": 0},
+                    }
+
+                # Borrar dependencias que restringen la eliminación
+                cur.execute(
+                    "DELETE FROM venta_detalle WHERE producto_id = ANY(%s::uuid[])",
+                    (ids,),
+                )
+                cur.execute(
+                    "DELETE FROM movimientos WHERE producto_id = ANY(%s::uuid[])",
+                    (ids,),
+                )
+
+                # Borrar los productos
+                cur.execute(
+                    "DELETE FROM productos WHERE id = ANY(%s::uuid[])",
+                    (ids,),
+                )
+                eliminados = cur.rowcount
+
+            _registrar_bitacora_productos(
+                "ELIMINACION",
+                entidad_id=None,
+                detalle=f"Eliminación masiva de {eliminados} productos",
+            )
+
+            print(f" {eliminados} productos eliminados")
+            return {
+                "success": True,
+                "message": f"Eliminados {eliminados} productos",
+                "data": {"eliminados": eliminados},
+            }
+
+        except Exception as e:
+            error_msg = str(e)
+            print(f" Error en ProductosService.eliminar_todos: {error_msg}")
+            return {
+                "success": False,
+                "message": f"Error al eliminar productos: {error_msg}",
             }
 
     @staticmethod
@@ -429,10 +495,9 @@ class ProductosService:
                 }
 
             _registrar_bitacora_productos(
-                {
-                    "descripcion": "Producto eliminado",
-                    "producto_id": producto_id,
-                }
+                "ELIMINACION",
+                entidad_id=producto_id,
+                detalle="Producto eliminado",
             )
 
             print(f" Producto eliminado con éxito")
@@ -606,14 +671,6 @@ class ProductosService:
                 else:
                     errores += 1
                     detalle.append(f"Error en '{nombre}': {resultado.get('message')}")
-
-            _registrar_bitacora_productos(
-                {
-                    "descripcion": f"Importación masiva: {creados} productos creados, {errores} errores",
-                    "bodega_id": bodega_id,
-                    "archivo": ruta_archivo,
-                }
-            )
 
             return {
                 "success": True,

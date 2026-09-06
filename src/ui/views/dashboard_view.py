@@ -8,6 +8,8 @@ from src.ui.views.movimientos_view import MovimientosView
 from src.ui.views.clientes_view import ClientesView
 from src.ui.views.reportes_view import ReportesView
 from src.ui.views.bitacora_view import BitacoraView
+from src.ui.views.revision_ventas_view import RevisionVentasView
+from src.ui.views.usuarios_view import UsuariosView
 from src.ui.components.cards import dashboard_card
 from src.services.productos_service import ProductosService
 from src.services.bodegas_service import BodegasService
@@ -108,6 +110,8 @@ VIEWS = {
     "CLIENTES": ClientesView,
     "REPORTES": ReportesView,
     "BITACORA": BitacoraView,
+    "REVISION_VENTAS": RevisionVentasView,
+    "USUARIOS": UsuariosView,
 }
 
 

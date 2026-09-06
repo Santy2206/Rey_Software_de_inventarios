@@ -201,7 +201,12 @@ class _MovimientosView(ft.Container):
             on_select=self._actualizar_tipo,
         )
 
-        self.bodega = ft.Dropdown(label="Bodega *", expand=True, options=[])
+        self.bodega = ft.Dropdown(
+            label="Bodega *",
+            expand=True,
+            options=[],
+            on_select=self._on_bodega_cambiada,
+        )
         self.producto = ft.Dropdown(label="Producto *", expand=True, options=[])
         self.cantidad = ft.TextField(
             label="Cantidad *",
@@ -256,6 +261,24 @@ class _MovimientosView(ft.Container):
         self.boton_registrar.text = texto
         self.boton_registrar.icon = icono
         self.boton_registrar.bgcolor = color
+        self.update()
+
+    def _on_bodega_cambiada(self, e=None):
+        """Filtra el dropdown de productos según la bodega seleccionada."""
+        bodega_id = self.bodega.value
+        if bodega_id:
+            filtrados = [
+                p for p in self._productos
+                if str(p.get("bodega_id")) == str(bodega_id)
+            ]
+        else:
+            filtrados = self._productos
+
+        self.producto.options = [
+            ft.DropdownOption(key=p["id"], text=p["nombre"])
+            for p in filtrados
+        ]
+        self.producto.value = None
         self.update()
 
     # ============================================================
@@ -323,7 +346,7 @@ class _MovimientosView(ft.Container):
 
     def _limpiar_formulario(self):
         self.bodega.value = None
-        self.producto.value = None
+        self._on_bodega_cambiada()  # restaura la lista completa de productos
         self.cantidad.value = ""
         self.motivo.value = ""
 

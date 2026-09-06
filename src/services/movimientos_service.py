@@ -24,6 +24,23 @@ from src.services.bitacora_service import BitacoraService
 TIPOS_VALIDOS = ["ingreso", "egreso", "transferencia"]
 
 
+def _registrar_bitacora_stock(
+    accion: str, producto_id: str, detalle: str, usuario_id: str
+):
+    """Registra en bitácora sin afectar la operación principal."""
+    try:
+        if usuario_id:
+            BitacoraService.registrar(
+                usuario_id,
+                accion,
+                entidad="producto",
+                entidad_id=producto_id,
+                detalle=detalle,
+            )
+    except Exception as e:
+        print(f" Error al registrar bitácora de stock: {e}")
+
+
 class MovimientosService:
 
     @staticmethod
@@ -173,21 +190,6 @@ class MovimientosService:
         )
         print(f"   Stock anterior: {stock_actual} → Stock nuevo: {nuevo_stock}")
 
-        BitacoraService.registrar(
-            usuario_id,
-            "MOVIMIENTO",
-            {
-                "descripcion": f"Movimiento {tipo} de {cantidad} unidades de '{nombre_producto}'",
-                "producto_id": producto_id,
-                "bodega_id": bodega_id,
-                "tipo": tipo,
-                "cantidad": cantidad,
-                "motivo": motivo,
-                "stock_anterior": stock_actual,
-                "stock_nuevo": nuevo_stock,
-            },
-        )
-
         return {
             "success": True,
             "message": f"Movimiento registrado. Stock actualizado a {nuevo_stock}",
@@ -270,9 +272,17 @@ class MovimientosService:
         """
         print(f"--- Registrando AJUSTE de {cantidad} unidades ---")
         try:
-            return MovimientosService._registrar_movimiento(
+            resultado = MovimientosService._registrar_movimiento(
                 producto_id, bodega_id, "egreso", cantidad, motivo, usuario_id
             )
+            if resultado.get("success"):
+                _registrar_bitacora_stock(
+                    "AJUSTE_STOCK",
+                    producto_id,
+                    f"Ajuste de stock: -{cantidad} unidades. Motivo: {motivo}",
+                    usuario_id,
+                )
+            return resultado
         except Exception as e:
             error_msg = str(e)
             print(f"Error en registrar_ajuste: {error_msg}")
@@ -299,9 +309,17 @@ class MovimientosService:
         """
         print(f"--- Registrando BAJA de {cantidad} unidades ---")
         try:
-            return MovimientosService._registrar_movimiento(
+            resultado = MovimientosService._registrar_movimiento(
                 producto_id, bodega_id, "egreso", cantidad, motivo, usuario_id
             )
+            if resultado.get("success"):
+                _registrar_bitacora_stock(
+                    "BAJA_STOCK",
+                    producto_id,
+                    f"Baja de stock: -{cantidad} unidades. Motivo: {motivo}",
+                    usuario_id,
+                )
+            return resultado
         except Exception as e:
             error_msg = str(e)
             print(f"Error en registrar_baja: {error_msg}")

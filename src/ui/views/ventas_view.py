@@ -15,6 +15,11 @@ Reglas:
     - SIN ft.app() — esta vista es montada por dashboard_view.py.
 """
 
+import asyncio
+import os
+import subprocess
+import sys
+import tempfile
 import threading
 from decimal import Decimal, ROUND_HALF_UP
 
@@ -23,6 +28,7 @@ import flet as ft
 from src.services.auth_service import AuthService
 from src.services.clientes_service import ClientesService
 from src.services.productos_service import ProductosService
+from src.services.ventas_import_service import VentasImportService
 from src.services.ventas_service import VentasService
 from src.ui.components.status_header import StatusHeader
 from src.ui.components.page_header import PageHeader
@@ -104,6 +110,8 @@ class _VentasView(ft.Container):
                 ft.DataColumn(ft.Text("Items")),
                 ft.DataColumn(ft.Text("Total")),
                 ft.DataColumn(ft.Text("Usuario")),
+                ft.DataColumn(ft.Text("Estado")),
+                ft.DataColumn(ft.Text("Acciones")),
             ],
             rows=[],
         )
@@ -157,6 +165,70 @@ class _VentasView(ft.Container):
             ],
             actions_alignment=ft.MainAxisAlignment.END,
         )
+        self._venta_a_anular = None
+        self._dialog_anular = ft.AlertDialog(
+            modal=True,
+            title=ft.Text("Anular venta"),
+            content=ft.Text(
+                "¿Anular esta venta? El stock de los productos "
+                "vendidos será devuelto al inventario."
+            ),
+            actions=[
+                ft.TextButton("Cancelar", on_click=self._cerrar_dialogo_anular),
+                ft.ElevatedButton(
+                    "Anular",
+                    bgcolor="#b3001b",
+                    color="white",
+                    on_click=self._confirmar_anulacion,
+                ),
+            ],
+            actions_alignment=ft.MainAxisAlignment.END,
+        )
+        self._import_ruta = ft.TextField(
+            label="Ruta del archivo",
+            hint_text="C:\\Users\\...\\ventas_elisa.xls",
+            border_radius=10,
+            expand=True,
+        )
+        self._dialog_importar = ft.AlertDialog(
+            modal=True,
+            title=ft.Text("Importar ventas desde Elisa (.xls/.xlsx)"),
+            content=ft.Column(
+                tight=True,
+                spacing=12,
+                controls=[
+                    ft.Text(
+                        "El archivo se aterriza en la cola de revisión; "
+                        "no se crean ventas ni se descuenta stock aquí.",
+                        size=12,
+                        color="grey",
+                    ),
+                    ft.Row(
+                        spacing=8,
+                        controls=[
+                            self._import_ruta,
+                            ft.ElevatedButton(
+                                "Examinar",
+                                icon=ft.Icons.FOLDER_OPEN,
+                                bgcolor="#2196F3",
+                                color="white",
+                                on_click=self._abrir_selector_archivo,
+                            ),
+                        ],
+                    ),
+                ],
+            ),
+            actions=[
+                ft.TextButton("Cancelar", on_click=self._cerrar_dialogo_importar),
+                ft.ElevatedButton(
+                    "Importar",
+                    bgcolor="#b3001b",
+                    color="white",
+                    on_click=self._importar_ventas,
+                ),
+            ],
+            actions_alignment=ft.MainAxisAlignment.END,
+        )
         self._snackbar = ft.SnackBar(content=ft.Text(""), show_close_icon=True)
 
         self._status_header = StatusHeader()
@@ -175,6 +247,8 @@ class _VentasView(ft.Container):
 
     def did_mount(self):
         self.page.overlay.append(self._dialog_cliente)
+        self.page.overlay.append(self._dialog_anular)
+        self.page.overlay.append(self._dialog_importar)
         self.page.overlay.append(self._snackbar)
         self.page.update()
         self._status_header.load(self.page)
@@ -226,6 +300,7 @@ class _VentasView(ft.Container):
                     bgcolor="#b3001b",
                     color="white",
                     height=45,
+                    on_click=self._abrir_dialogo_importar,
                     style=ft.ButtonStyle(
                         shape=ft.RoundedRectangleBorder(radius=10)
                     ),
@@ -568,6 +643,7 @@ class _VentasView(ft.Container):
             if hasattr(fecha, "strftime")
             else str(fecha or "—")
         )
+        anulada = bool(venta.get("anulada"))
         return ft.DataRow(
             cells=[
                 ft.DataCell(ft.Text(fecha_str)),
@@ -580,8 +656,62 @@ class _VentasView(ft.Container):
                     )
                 ),
                 ft.DataCell(ft.Text(venta.get("usuario_nombre") or "—")),
+                ft.DataCell(
+                    ft.Container(
+                        bgcolor="#FEE2E2" if anulada else "#DCFCE7",
+                        border_radius=20,
+                        padding=6,
+                        alignment=ft.Alignment(0, 0),
+                        content=ft.Text(
+                            "Anulada" if anulada else "Completada",
+                            color="#B91C1C" if anulada else "#15803D",
+                            weight=ft.FontWeight.BOLD,
+                            size=11,
+                        ),
+                    )
+                ),
+                ft.DataCell(
+                    ft.IconButton(
+                        icon=ft.Icons.CANCEL,
+                        icon_color="#B91C1C",
+                        tooltip="Anular venta",
+                        disabled=anulada,
+                        on_click=lambda e, v=venta: self._abrir_dialogo_anular(v),
+                    )
+                ),
             ]
         )
+
+    def _abrir_dialogo_anular(self, venta: dict):
+        self._venta_a_anular = venta
+        self._dialog_anular.open = True
+        self.page.update()
+
+    def _cerrar_dialogo_anular(self, e=None):
+        self._venta_a_anular = None
+        self._dialog_anular.open = False
+        self.page.update()
+
+    def _confirmar_anulacion(self, e=None):
+        venta = self._venta_a_anular
+        self._cerrar_dialogo_anular()
+        if not venta:
+            return
+
+        usuario_id = AuthService.get_usuario_id()
+
+        def _worker():
+            result = VentasService.anular(
+                venta_id=str(venta["id"]),
+                usuario_id=usuario_id,
+            )
+            self._mostrar_snack(result["message"], error=not result["success"])
+            if result["success"]:
+                self._cargar_historial()
+                self.page.update()
+
+        threading.Thread(target=_worker, daemon=True).start()
+
 
     def _aplicar_filtros(self, e=None):
         texto = (self._buscar.value or "").lower()
@@ -596,3 +726,151 @@ class _VentasView(ft.Container):
         self._snackbar.open = True
         if self.page:
             self.page.update()
+
+    # ---------------- Importación Elisa ----------------
+    def _abrir_dialogo_importar(self, e=None):
+        self._import_ruta.value = ""
+        self._dialog_importar.open = True
+        self.page.update()
+
+    def _cerrar_dialogo_importar(self, e=None):
+        self._dialog_importar.open = False
+        self.page.update()
+
+    def _abrir_selector_archivo(self, e=None):
+        """Abre el explorador de archivos nativo."""
+        if self.page.web:
+            self.page.run_task(self._seleccionar_archivo)
+            return
+        threading.Thread(
+            target=self._seleccionar_archivo_desktop, daemon=True
+        ).start()
+
+    def _seleccionar_archivo_desktop(self):
+        """Selector nativo en escritorio (hilo aparte para no congelar la UI)."""
+        try:
+            comando = [
+                "powershell.exe",
+                "-NoProfile",
+                "-Command",
+                (
+                    "Add-Type -AssemblyName System.Windows.Forms; "
+                    "$f = New-Object System.Windows.Forms.OpenFileDialog; "
+                    "$f.Filter = 'Excel Elisa (*.xls,*.xlsx)|*.xls;*.xlsx|"
+                    "Todos los archivos (*.*)|*.*'; "
+                    "$f.Title = 'Seleccionar archivo de ventas Elisa'; "
+                    "$owner = New-Object System.Windows.Forms.Form; "
+                    "$owner.TopMost = $true; "
+                    "$owner.StartPosition = 'CenterScreen'; "
+                    "$owner.ShowInTaskbar = $false; "
+                    "$owner.Width = 1; $owner.Height = 1; "
+                    "$owner.Opacity = 0; "
+                    "$owner.Show(); "
+                    "if ($f.ShowDialog($owner) -eq 'OK') { "
+                    "    Write-Output $f.FileName "
+                    "}; "
+                    "$owner.Close(); $owner.Dispose()"
+                ),
+            ]
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            result = subprocess.run(
+                comando,
+                capture_output=True,
+                text=True,
+                startupinfo=startupinfo,
+            )
+            ruta = result.stdout.strip()
+            if ruta:
+                self._import_ruta.value = ruta
+                if self.page:
+                    self.page.update()
+        except Exception as ex:
+            self._mostrar_snack(f"No se pudo abrir el selector: {ex}", error=True)
+
+    async def _seleccionar_archivo(self):
+        """FilePicker en modo web (debe registrarse en page.services)."""
+        file_picker = ft.FilePicker()
+        self.page.services.append(file_picker)
+        self.page.update()
+        try:
+            archivos = await asyncio.wait_for(
+                file_picker.pick_files(
+                    dialog_title="Seleccionar archivo de ventas Elisa",
+                    allow_multiple=False,
+                    file_type=ft.FilePickerFileType.CUSTOM,
+                    allowed_extensions=["xls", "xlsx"],
+                    with_data=True,
+                ),
+                timeout=60,
+            )
+        except asyncio.TimeoutError:
+            self._mostrar_snack(
+                "El selector de archivos tardó demasiado. Intente de nuevo.",
+                error=True,
+            )
+            return
+        except Exception as ex:
+            self._mostrar_snack(
+                f"No se pudo abrir el selector de archivos: {ex}", error=True
+            )
+            return
+        finally:
+            try:
+                self.page.services.remove(file_picker)
+            except Exception:
+                pass
+
+        if not archivos:
+            return
+        archivo = archivos[0]
+        if archivo.path:
+            self._import_ruta.value = archivo.path
+        elif archivo.bytes:
+            extension = (
+                archivo.name.split(".")[-1].lower()
+                if "." in archivo.name
+                else "xls"
+            )
+            try:
+                with tempfile.NamedTemporaryFile(
+                    delete=False, suffix=f".{extension}"
+                ) as tmp:
+                    tmp.write(archivo.bytes)
+                    self._import_ruta.value = tmp.name
+            except Exception as ex:
+                self._mostrar_snack(
+                    f"No se pudo guardar el archivo temporal: {ex}", error=True
+                )
+                return
+        else:
+            self._mostrar_snack(
+                "No se obtuvo la ruta ni el contenido del archivo.", error=True
+            )
+            return
+        self.page.update()
+
+    def _importar_ventas(self, e=None):
+        ruta = (self._import_ruta.value or "").strip()
+        if not ruta:
+            self._mostrar_snack(
+                "Seleccione el archivo de ventas Elisa.", error=True
+            )
+            return
+        if not os.path.exists(ruta):
+            self._mostrar_snack(
+                "El archivo no existe en la ruta indicada.", error=True
+            )
+            return
+
+        self._dialog_importar.open = False
+        self.page.update()
+
+        def _worker():
+            res = VentasImportService.importar_raw(ruta)
+            self._mostrar_snack(
+                res.get("message", "Importación finalizada"),
+                error=not res.get("success"),
+            )
+
+        threading.Thread(target=_worker, daemon=True).start()

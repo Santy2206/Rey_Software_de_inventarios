@@ -16,9 +16,8 @@ Mismo contrato que el resto de servicios:
   - SIN importaciones de Flet — solo lógica pura
 """
 
+from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP
-
-from psycopg2.extras import Json
 
 from src.core.local_db import get_cursor, run_query
 from src.services.bitacora_service import BitacoraService
@@ -34,6 +33,11 @@ class _VentaError(Exception):
 
 def _money(value) -> Decimal:
     return Decimal(str(value)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+
+def _qty(value) -> Decimal:
+    """Cantidad con hasta 4 decimales (gramos de esencia / combos)."""
+    return Decimal(str(value)).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
 
 
 def _as_id(value) -> str | None:
@@ -56,6 +60,7 @@ class VentasService:
                        v.usuario_id,
                        v.total,
                        v.fecha,
+                       v.anulada,
                        c.nombre AS cliente_nombre,
                        u.name   AS usuario_nombre,
                        COUNT(d.id) AS items,
@@ -93,6 +98,7 @@ class VentasService:
                 SELECT COALESCE(SUM(total), 0) AS total
                 FROM ventas
                 WHERE fecha::date = CURRENT_DATE
+                  AND COALESCE(anulada, false) = false
                 """,
                 fetch_one=True,
             )
@@ -109,22 +115,42 @@ class VentasService:
             }
 
     @staticmethod
-    def registrar(cliente_id: str, items: list[dict], usuario_id: str = None):
+    def registrar(
+        cliente_id: str,
+        items: list[dict],
+        usuario_id: str = None,
+        fecha=None,
+        total_forzado=None,
+        permitir_stock_negativo: bool = False,
+        motivo_movimiento: str | None = None,
+    ):
         """
         Registra una venta.
 
         Parámetros:
             cliente_id: id del cliente que compra
-            items:      lista de {producto_id, cantidad}
-            usuario_id: id del usuario que registra (si no coincide con
-                        usuarios.id local, se usa el primer usuario de la BD)
+            items:      lista de {
+                            producto_id,
+                            cantidad,              # int o decimal
+                            precio_unitario?,      # opcional override
+                            subtotal?,             # opcional override
+                        }
+            usuario_id: id del usuario que registra
+            fecha:      datetime o str ISO opcional (import Elisa)
+            total_forzado: si se indica, el total de la venta se fija a este
+                           valor (p.ej. CREDITO del archivo Elisa), aunque
+                           el reparto de líneas use precios internos.
+            permitir_stock_negativo: si True, no bloquea por stock insuficiente
+                           (útil al importar histórico con stock aún no
+                           cargado; el movimiento y el stock se actualizan
+                           igual). Por defecto False (RF07/RF08 manual).
+            motivo_movimiento: texto del movimiento; default 'VENTA {id}'.
 
         Efectos en la misma transacción:
             1. INSERT en ventas
-            2. INSERT en venta_detalle (precio tomado de productos.precio)
-            3. UPDATE productos.stock_actual (con bloqueo de fila)
-            4. INSERT en movimientos tipo 'egreso' (motivo VENTA)
-            5. INSERT en bitácora (best-effort dentro de la misma transacción)
+            2. INSERT en venta_detalle
+            3. UPDATE productos.stock_actual (bloqueo de fila)
+            4. INSERT en movimientos tipo 'egreso'
         """
         print("--- Registrando venta ---")
         try:
@@ -153,23 +179,35 @@ class VentasService:
                 if not cliente:
                     raise _VentaError("Cliente no encontrado")
 
-                cur.execute(
-                    """
-                    INSERT INTO ventas (cliente_id, usuario_id, total)
-                    VALUES (%s, %s, %s)
-                    RETURNING *
-                    """,
-                    (cliente_id, usuario_local, Decimal("0.00")),
-                )
+                if fecha is None:
+                    cur.execute(
+                        """
+                        INSERT INTO ventas (cliente_id, usuario_id, total)
+                        VALUES (%s, %s, %s)
+                        RETURNING *
+                        """,
+                        (cliente_id, usuario_local, Decimal("0.00")),
+                    )
+                else:
+                    cur.execute(
+                        """
+                        INSERT INTO ventas (cliente_id, usuario_id, total, fecha)
+                        VALUES (%s, %s, %s, %s)
+                        RETURNING *
+                        """,
+                        (cliente_id, usuario_local, Decimal("0.00"), fecha),
+                    )
                 venta = cur.fetchone()
                 venta_id = venta["id"]
 
                 total = Decimal("0.00")
-                nombres = []
+                motivo = motivo_movimiento or f"VENTA {venta_id}"
 
                 for linea in lineas:
                     producto_id = linea["producto_id"]
-                    cantidad = linea["cantidad"]
+                    cantidad = _qty(linea["cantidad"])
+                    if cantidad <= 0:
+                        raise _VentaError("La cantidad debe ser mayor a 0")
 
                     cur.execute(
                         """
@@ -184,18 +222,25 @@ class VentasService:
                     if not producto:
                         raise _VentaError(f"Producto no encontrado: {producto_id}")
 
-                    stock_actual = int(producto["stock_actual"] or 0)
-                    if stock_actual < cantidad:
+                    stock_actual = _qty(producto["stock_actual"] or 0)
+                    if (not permitir_stock_negativo) and stock_actual < cantidad:
                         raise _VentaError(
                             f"Stock insuficiente de '{producto['nombre']}'. "
                             f"Disponible: {stock_actual}, solicitado: {cantidad}"
                         )
 
-                    precio = _money(producto["precio"])
-                    subtotal = _money(precio * cantidad)
+                    if "precio_unitario" in linea and linea["precio_unitario"] is not None:
+                        precio = _money(linea["precio_unitario"])
+                    else:
+                        precio = _money(producto["precio"])
+
+                    if "subtotal" in linea and linea["subtotal"] is not None:
+                        subtotal = _money(linea["subtotal"])
+                    else:
+                        subtotal = _money(precio * cantidad)
+
                     total += subtotal
                     nuevo_stock = stock_actual - cantidad
-                    nombres.append(f"{producto['nombre']} x{cantidad}")
 
                     cur.execute(
                         """
@@ -206,7 +251,11 @@ class VentasService:
                         (venta_id, producto_id, cantidad, precio, subtotal),
                     )
                     cur.execute(
-                        "UPDATE productos SET stock_actual = %s WHERE id = %s",
+                        """
+                        UPDATE productos
+                        SET stock_actual = %s, dirty = true
+                        WHERE id = %s
+                        """,
                         (nuevo_stock, producto_id),
                     )
                     cur.execute(
@@ -221,44 +270,18 @@ class VentasService:
                             usuario_local,
                             "egreso",
                             cantidad,
-                            f"VENTA {venta_id}",
+                            motivo,
                         ),
                     )
 
+                if total_forzado is not None:
+                    total = _money(total_forzado)
+
                 cur.execute(
-                    "UPDATE ventas SET total = %s WHERE id = %s RETURNING *",
+                    "UPDATE ventas SET total = %s, dirty = true WHERE id = %s RETURNING *",
                     (total, venta_id),
                 )
                 venta = cur.fetchone()
-
-                descripcion = (
-                    f"Venta a {cliente['nombre']} por ${total} "
-                    f"({', '.join(nombres)})"
-                )
-                cur.execute(
-                    """
-                    INSERT INTO bitacora (usuario_id, accion, detalles)
-                    VALUES (%s, %s, %s)
-                    """,
-                    (
-                        usuario_local,
-                        "VENTA",
-                        Json({"descripcion": descripcion, "venta_id": str(venta_id)}),
-                    ),
-                )
-
-            BitacoraService.registrar(
-                usuario_local,
-                "VENTA",
-                {
-                    "descripcion": descripcion,
-                    "venta_id": str(venta_id),
-                    "cliente_id": cliente_id,
-                    "cliente_nombre": cliente["nombre"],
-                    "total": str(total),
-                    "items": lineas,
-                },
-            )
 
             print(f" Venta {venta_id} registrada. Total: {total}")
             return {
@@ -279,22 +302,166 @@ class VentasService:
             }
 
     @staticmethod
+    def anular(venta_id: str, usuario_id: str = None):
+        """
+        Anula una venta: la marca como anulada y devuelve el stock
+        de cada producto vendido (movimiento 'ingreso' por línea).
+
+        Parámetros:
+            venta_id:   id de la venta a anular
+            usuario_id: id del usuario que anula (para bitácora y
+                        movimientos; si no coincide con usuarios.id
+                        local, se usa el primer usuario de la BD)
+
+        Efectos en la misma transacción:
+            1. UPDATE ventas SET anulada = true
+            2. UPDATE productos.stock_actual += cantidad por línea
+            3. INSERT en movimientos tipo 'ingreso' (motivo ANULACION)
+            4. Registro en bitácora (ANULACION_VENTA)
+        """
+        print(f"--- Anulando venta id: {venta_id} ---")
+        try:
+            if not venta_id:
+                return {"success": False, "message": "La venta es obligatoria"}
+
+            usuario_local = None
+            total = Decimal("0.00")
+
+            with get_cursor() as cur:
+                usuario_local = VentasService._resolver_usuario_id(
+                    cur, usuario_id
+                )
+                if not usuario_local:
+                    raise _VentaError(
+                        "No hay un usuario local válido para anular la venta"
+                    )
+
+                cur.execute(
+                    """
+                    SELECT id, total, anulada
+                    FROM ventas
+                    WHERE id = %s
+                    FOR UPDATE
+                    """,
+                    (venta_id,),
+                )
+                venta = cur.fetchone()
+                if not venta:
+                    raise _VentaError("Venta no encontrada")
+                if venta.get("anulada"):
+                    raise _VentaError("La venta ya está anulada")
+
+                total = _money(venta["total"])
+
+                cur.execute(
+                    """
+                    SELECT d.producto_id,
+                           d.cantidad,
+                           p.bodega_id,
+                           p.nombre AS producto_nombre
+                    FROM venta_detalle d
+                    JOIN productos p ON p.id = d.producto_id
+                    WHERE d.venta_id = %s
+                    """,
+                    (venta_id,),
+                )
+                detalles = cur.fetchall() or []
+
+                for det in detalles:
+                    cur.execute(
+                        """
+                        UPDATE productos
+                        SET stock_actual = stock_actual + %s
+                        WHERE id = %s
+                        """,
+                        (det["cantidad"], det["producto_id"]),
+                    )
+                    cur.execute(
+                        """
+                        INSERT INTO movimientos
+                            (producto_id, bodega_id, usuario_id, tipo, cantidad, motivo)
+                        VALUES (%s, %s, %s, %s, %s, %s)
+                        """,
+                        (
+                            det["producto_id"],
+                            det["bodega_id"],
+                            usuario_local,
+                            "ingreso",
+                            det["cantidad"],
+                            f"ANULACION VENTA {venta_id}",
+                        ),
+                    )
+
+                cur.execute(
+                    "UPDATE ventas SET anulada = true, dirty = true WHERE id = %s",
+                    (venta_id,),
+                )
+
+            BitacoraService.registrar(
+                usuario_local,
+                "ANULACION_VENTA",
+                entidad="venta",
+                entidad_id=venta_id,
+                detalle=f"Venta anulada. Total devuelto: ${total}",
+            )
+
+            print(f" Venta {venta_id} anulada")
+            return {"success": True, "message": "Venta anulada con éxito"}
+
+        except _VentaError as e:
+            return {"success": False, "message": e.message}
+
+        except Exception as e:
+            error_msg = str(e)
+            print(f" Error en VentasService.anular: {error_msg}")
+            return {
+                "success": False,
+                "message": f"Error al anular la venta: {error_msg}",
+            }
+
+    @staticmethod
     def _normalizar_items(items: list[dict]) -> list[dict]:
-        """Agrupa cantidades del mismo producto y descarta líneas inválidas."""
-        agrupado: dict[str, int] = {}
+        """
+        Normaliza líneas de venta.
+
+        Si varias líneas del mismo producto_id no traen precio/subtotal
+        custom, se agrupan sumando cantidades. Las que traen overrides
+        se conservan como líneas independientes.
+        """
+        agrupado: dict[str, Decimal] = {}
+        extras: list[dict] = []
         for item in items or []:
             producto_id = _as_id(item.get("producto_id"))
+            if not producto_id:
+                continue
             try:
-                cantidad = int(item.get("cantidad") or 0)
-            except (TypeError, ValueError):
+                cantidad = _qty(item.get("cantidad") or 0)
+            except Exception:
                 continue
-            if not producto_id or cantidad <= 0:
+            if cantidad <= 0:
                 continue
-            agrupado[producto_id] = agrupado.get(producto_id, 0) + cantidad
 
-        return [
+            tiene_override = (
+                item.get("precio_unitario") is not None
+                or item.get("subtotal") is not None
+            )
+            if tiene_override:
+                extras.append(
+                    {
+                        "producto_id": producto_id,
+                        "cantidad": cantidad,
+                        "precio_unitario": item.get("precio_unitario"),
+                        "subtotal": item.get("subtotal"),
+                    }
+                )
+            else:
+                agrupado[producto_id] = agrupado.get(producto_id, Decimal("0")) + cantidad
+
+        out = [
             {"producto_id": pid, "cantidad": cant} for pid, cant in agrupado.items()
         ]
+        out.extend(extras)
+        return out
 
     @staticmethod
     def _resolver_usuario_id(cur, usuario_id: str | None) -> str | None:
