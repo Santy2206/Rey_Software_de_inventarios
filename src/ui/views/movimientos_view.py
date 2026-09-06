@@ -30,6 +30,7 @@ from src.services.productos_service import ProductosService
 from src.services.auth_service import AuthService
 from src.ui.components.status_header import StatusHeader
 from src.ui.components.page_header import PageHeader
+from src.ui.components.bodega_labels import label_bodega
 
 _COLOR_TIPO = {
     "Entrada": ("#DCFCE7", "#15803D"),
@@ -141,7 +142,7 @@ class _MovimientosView(ft.Container):
         if res_bodegas.get("success"):
             self._bodegas = res_bodegas.get("data", [])
             self.bodega.options = [
-                ft.DropdownOption(key=b["id"], text=b["nombre"])
+                ft.DropdownOption(key=b["id"], text=label_bodega(b))
                 for b in self._bodegas
             ]
 

@@ -55,6 +55,8 @@ CREATE TABLE public.bodegas (
     ubicacion text,
     es_principal boolean DEFAULT false NOT NULL,
     cuentas_elisa text,
+    orden int,
+    descripcion text,
     creado_en timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
     dirty boolean DEFAULT true,
     synced_at timestamp with time zone

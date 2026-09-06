@@ -21,6 +21,7 @@ import threading
 import flet as ft
 
 from src.services.bodegas_service import BodegasService
+from src.ui.components.bodega_labels import label_bodega
 from src.services.auth_service import AuthService
 from src.services.clientes_resolucion_service import ClientesResolucionService
 from src.services.fusion_producto_service import (
@@ -175,6 +176,45 @@ class _RevisionVentasView(ft.Container):
             actions_alignment=ft.MainAxisAlignment.END,
         )
 
+        # --- Diálogo descartar TODOS ---
+        self._campo_motivo_todos = ft.TextField(
+            label="Motivo *",
+            hint_text="Explica por qué se descartan todas las pendientes",
+            border_radius=10,
+            multiline=True,
+            min_lines=2,
+        )
+        self._dialog_descartar_todos = ft.AlertDialog(
+            modal=True,
+            title=ft.Text("Descartar todas las pendientes"),
+            content=ft.Column(
+                tight=True,
+                spacing=10,
+                width=400,
+                controls=[
+                    ft.Text(
+                        "Se descartarán TODAS las filas con estado 'pendiente' "
+                        "de la cola de revisión.",
+                        size=12,
+                        color="grey",
+                    ),
+                    self._campo_motivo_todos,
+                ],
+            ),
+            actions=[
+                ft.TextButton(
+                    "Cancelar", on_click=self._cerrar_dialogo_descartar_todos
+                ),
+                ft.ElevatedButton(
+                    "Descartar todas",
+                    bgcolor="#b3001b",
+                    color="white",
+                    on_click=self._confirmar_descartar_todos,
+                ),
+            ],
+            actions_alignment=ft.MainAxisAlignment.END,
+        )
+
         # --- Diálogo fusión ---
         self._fusion_origen = ft.TextField(label="ID producto origen (duplicado)", border_radius=10)
         self._fusion_destino = ft.TextField(label="ID producto destino (se conserva)", border_radius=10)
@@ -289,6 +329,7 @@ class _RevisionVentasView(ft.Container):
             self._dialog_vincular,
             self._dialog_crear,
             self._dialog_descartar,
+            self._dialog_descartar_todos,
             self._dialog_fusion,
             self._snackbar,
         ):
@@ -336,6 +377,14 @@ class _RevisionVentasView(ft.Container):
                     on_click=self._abrir_dialogo_fusion,
                 ),
                 ft.ElevatedButton(
+                    "Descartar todos",
+                    icon=ft.Icons.DELETE_SWEEP,
+                    bgcolor="#991B1B",
+                    color="white",
+                    height=40,
+                    on_click=self._abrir_dialogo_descartar_todos,
+                ),
+                ft.ElevatedButton(
                     "Actualizar",
                     icon=ft.Icons.REFRESH,
                     bgcolor="#6B7280",
@@ -367,24 +416,15 @@ class _RevisionVentasView(ft.Container):
         res_b = BodegasService.get_all()
         self._bodegas = res_b.get("data", []) if res_b.get("success") else []
 
-        _PRINCIPALES = ("ENVASES", "VENTA FRAGANCIAS", "FRAGANCIAS BODEGA")
-
-        def _label_bodega(b: dict) -> str:
-            nombre = (b.get("nombre") or "—").strip()
-            if nombre.upper() in _PRINCIPALES:
-                return nombre
-            cuentas = (b.get("cuentas_elisa") or "").strip()
-            return f"{nombre} ({cuentas})" if cuentas else nombre
-
         self._campo_bodega_nuevo.options = [
-            ft.DropdownOption(key=str(b["id"]), text=_label_bodega(b))
+            ft.DropdownOption(key=str(b["id"]), text=label_bodega(b))
             for b in self._bodegas
         ]
 
         self._filtro_bodega_vincular.options = [
             ft.DropdownOption(key="", text="Todas")
         ] + [
-            ft.DropdownOption(key=str(b["id"]), text=_label_bodega(b))
+            ft.DropdownOption(key=str(b["id"]), text=label_bodega(b))
             for b in self._bodegas
         ]
         self._cargar_pendientes()
@@ -1015,6 +1055,31 @@ class _RevisionVentasView(ft.Container):
 
         def _worker():
             res = VentasResolucionService.descartar(str(fila["id"]), motivo)
+            self._mostrar_snack(res.get("message", ""), error=not res.get("success"))
+            if res.get("success"):
+                self._cargar_pendientes()
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+    # --- Descartar todos ---
+    def _abrir_dialogo_descartar_todos(self, e=None):
+        self._campo_motivo_todos.value = ""
+        self._dialog_descartar_todos.open = True
+        self.page.update()
+
+    def _cerrar_dialogo_descartar_todos(self, e=None):
+        self._dialog_descartar_todos.open = False
+        self.page.update()
+
+    def _confirmar_descartar_todos(self, e=None):
+        motivo = (self._campo_motivo_todos.value or "").strip()
+        if not motivo:
+            self._mostrar_snack("El motivo es obligatorio.", error=True)
+            return
+        self._cerrar_dialogo_descartar_todos()
+
+        def _worker():
+            res = VentasResolucionService.descartar_todos(motivo)
             self._mostrar_snack(res.get("message", ""), error=not res.get("success"))
             if res.get("success"):
                 self._cargar_pendientes()

@@ -83,10 +83,19 @@ class _BodegasView(ft.Container):
             value=False,
         )
         self._campo_cuentas = ft.TextField(
-            label="Cuentas Elisa vinculadas",
-            hint_text='Ej: "41353804, 41353802" o "Solo ingresos y traslados"',
+            label="Código Elisa *",
+            hint_text='Ej: "41353804" o "Solo ingresos y traslados"',
             border_radius=10,
             width=360,
+        )
+        self._campo_descripcion = ft.TextField(
+            label="Descripción *",
+            hint_text="Ej: Cremas, desodorantes y labiales",
+            border_radius=10,
+            width=360,
+            multiline=True,
+            min_lines=2,
+            max_lines=3,
         )
         self._campo_password_editar = ft.TextField(
             label="Contraseña de su sesión",
@@ -183,30 +192,31 @@ class _BodegasView(ft.Container):
     def _mostrar_dialogo(self, dlg: ft.AlertDialog):
         """Abre un AlertDialog con el API actual de Flet (show_dialog)."""
         self._set_error_dialogo("")
-        if dlg not in self.page.overlay:
-            self.page.overlay.append(dlg)
-        # Flet 0.84: show_dialog / pop_dialog gestionan el stack de diálogos
+        # Flet 0.84: show_dialog gestiona solo el stack; no agregar a overlay
+        # manualmente o queda una copia duplicada que no se cierra.
         if hasattr(self.page, "show_dialog"):
             self.page.show_dialog(dlg)
         else:
+            if dlg not in self.page.overlay:
+                self.page.overlay.append(dlg)
             dlg.open = True
             self.page.update()
 
     def _ocultar_dialogo(self, dlg: ft.AlertDialog | None):
         if dlg is None:
             return
+        dlg.open = False
         try:
+            if dlg in self.page.overlay:
+                self.page.overlay.remove(dlg)
             if hasattr(self.page, "pop_dialog"):
                 self.page.pop_dialog()
-            else:
-                dlg.open = False
-                self.page.update()
         except Exception:
-            dlg.open = False
-            try:
-                self.page.update()
-            except Exception:
-                pass
+            pass
+        try:
+            self.page.update()
+        except Exception:
+            pass
 
     def _set_error_dialogo(self, mensaje: str):
         """Muestra u oculta el error dentro del diálogo abierto (visible sobre el modal)."""
@@ -307,6 +317,7 @@ class _BodegasView(ft.Container):
         nombre = bodega.get("nombre", "Sin nombre")
         tipo = bodega.get("tipo", "—")
         cuentas = (bodega.get("cuentas_elisa") or "").strip()
+        descripcion = (bodega.get("descripcion") or "").strip().title()
 
         return ft.Container(
             width=260,
@@ -365,6 +376,14 @@ class _BodegasView(ft.Container):
                         f"Cuentas Elisa: {cuentas}" if cuentas else "Cuentas Elisa: —",
                         size=11,
                         color="#4B5563",
+                    ),
+                    ft.Text(
+                        descripcion or "Sin descripción",
+                        size=11,
+                        color="grey",
+                        italic=not descripcion,
+                        max_lines=2,
+                        overflow=ft.TextOverflow.ELLIPSIS,
                     ),
                     ft.Row(
                         spacing=8,
@@ -498,6 +517,8 @@ class _BodegasView(ft.Container):
         self._campo_nombre.value = ""
         self._campo_tipo.value = None
         self._campo_principal.value = False
+        self._campo_cuentas.value = ""
+        self._campo_descripcion.value = ""
         self._campo_password_editar.value = ""
         self._campo_password_editar.error_text = None
         self._dialog = ft.AlertDialog(
@@ -511,6 +532,8 @@ class _BodegasView(ft.Container):
                     self._campo_nombre,
                     self._campo_tipo,
                     self._campo_principal,
+                    self._campo_cuentas,
+                    self._campo_descripcion,
                     self._error_dialogo,
                 ],
             ),
@@ -536,6 +559,7 @@ class _BodegasView(ft.Container):
         )
         self._campo_principal.value = bool(bodega.get("es_principal"))
         self._campo_cuentas.value = bodega.get("cuentas_elisa") or ""
+        self._campo_descripcion.value = bodega.get("descripcion") or ""
         self._campo_password_editar.value = ""
         self._campo_password_editar.error_text = None
         self._dialog = ft.AlertDialog(
@@ -550,6 +574,7 @@ class _BodegasView(ft.Container):
                     self._campo_tipo,
                     self._campo_principal,
                     self._campo_cuentas,
+                    self._campo_descripcion,
                     self._ayuda_seguridad_editar,
                     self._campo_password_editar,
                     self._error_dialogo,
@@ -697,9 +722,19 @@ class _BodegasView(ft.Container):
         nombre = (self._campo_nombre.value or "").strip()
         tipo = (self._campo_tipo.value or "").strip()
         es_principal = bool(self._campo_principal.value)
+        cuentas = (self._campo_cuentas.value or "").strip()
+        descripcion = (self._campo_descripcion.value or "").strip()
 
         if not nombre or not tipo:
             self._set_error_dialogo("Nombre y Tipo son obligatorios.")
+            return
+
+        if self._bodega_editando is None and not cuentas:
+            self._set_error_dialogo("El Código Elisa es obligatorio al crear.")
+            return
+
+        if not descripcion:
+            self._set_error_dialogo("La Descripción es obligatoria.")
             return
 
         # Editar requiere revalidar la contraseña de la sesión
@@ -717,7 +752,11 @@ class _BodegasView(ft.Container):
             try:
                 if editando is None:
                     result = BodegasService.create(
-                        nombre=nombre, tipo=tipo, es_principal=es_principal
+                        nombre=nombre,
+                        tipo=tipo,
+                        es_principal=es_principal,
+                        cuentas_elisa=cuentas,
+                        descripcion=descripcion,
                     )
                 else:
                     result = BodegasService.update(
@@ -725,7 +764,8 @@ class _BodegasView(ft.Container):
                         nombre=nombre,
                         tipo=tipo,
                         es_principal=es_principal,
-                        cuentas_elisa=self._campo_cuentas.value or None,
+                        cuentas_elisa=cuentas,
+                        descripcion=descripcion,
                     )
             except Exception as ex:
                 result = {"success": False, "message": f"Error al guardar: {ex}"}

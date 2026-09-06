@@ -820,6 +820,43 @@ class VentasResolucionService:
             }
 
     @staticmethod
+    def descartar_todos(motivo: str) -> dict:
+        """Descarta todas las filas con estado_resolucion='pendiente'."""
+        print("--- Descartando TODAS las filas pendientes ---")
+        try:
+            motivo_limpio = (motivo or "").strip()
+            if not motivo_limpio:
+                return {
+                    "success": False,
+                    "message": "El motivo de descarte es obligatorio",
+                }
+            filas = run_query(
+                """
+                UPDATE ventas_import_raw
+                SET estado_resolucion = 'descartado',
+                    producto_id = NULL,
+                    productos_vinculados = NULL,
+                    candidatos = NULL,
+                    motivo_descarte = %s
+                WHERE estado_resolucion = 'pendiente'
+                  AND es_cuadre_caja = false
+                RETURNING id
+                """,
+                (motivo_limpio[:500],),
+            )
+            n = len(filas or [])
+            return {
+                "success": True,
+                "message": f"{n} fila(s) descartadas",
+                "data": {"descartadas": n},
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "message": f"Error al descartar: {e}",
+            }
+
+    @staticmethod
     def buscar_productos_manual(
         texto: str, limite: int = 20, bodega_id: str | None = None
     ) -> dict:

@@ -48,8 +48,9 @@ class BodegasService:
             # 'ubicacion AS tipo' — bodegas_view.py espera la llave "tipo"
             data = run_query(
                 "SELECT id, nombre, ubicacion AS tipo, es_principal, "
-                "cuentas_elisa, creado_en "
-                "FROM bodegas ORDER BY es_principal DESC, nombre"
+                "cuentas_elisa, orden, descripcion, creado_en "
+                "FROM bodegas "
+                "ORDER BY COALESCE(orden, 9999), es_principal DESC, nombre"
             )
 
             if not data:
@@ -97,7 +98,14 @@ class BodegasService:
             return {"success": False, "message": f"Error al buscar bodega: {error_msg}"}
 
     @staticmethod
-    def create(nombre: str, tipo: str, es_principal: bool = False):
+    def create(
+        nombre: str,
+        tipo: str,
+        es_principal: bool = False,
+        cuentas_elisa: str | None = None,
+        orden: int | None = None,
+        descripcion: str | None = None,
+    ):
         """
         Crea una nueva bodega.
 
@@ -109,13 +117,25 @@ class BodegasService:
         """
         print(f"--- Creando bodega: {nombre} ({tipo}) ---")
         try:
+            # Tipo Fragancias → siempre es bodega principal
+            if (tipo or "").strip().upper() == "FRAGANCIAS":
+                es_principal = True
+            if orden is None and cuentas_elisa:
+                import re
+                m = re.search(r"\d{6,}", str(cuentas_elisa))
+                if m:
+                    orden = int(m.group(0)) % 1000  # 41353804 → 804
+            if descripcion:
+                descripcion = descripcion.strip().title()
             bodega = run_query(
                 """
-                INSERT INTO bodegas (nombre, ubicacion, es_principal)
-                VALUES (%s, %s, %s)
+                INSERT INTO bodegas
+                    (nombre, ubicacion, es_principal, cuentas_elisa,
+                     orden, descripcion)
+                VALUES (%s, %s, %s, %s, %s, %s)
                 RETURNING *
                 """,
-                (nombre, tipo, es_principal),
+                (nombre, tipo, es_principal, cuentas_elisa, orden, descripcion),
                 fetch_one=True,
             )
 
@@ -141,6 +161,8 @@ class BodegasService:
         tipo: str,
         es_principal: bool | None = None,
         cuentas_elisa: str | None = None,
+        orden: int | None = None,
+        descripcion: str | None = None,
     ):
         """
         Actualiza el nombre y/o tipo de una bodega existente.
@@ -152,6 +174,11 @@ class BodegasService:
         """
         print(f"--- Actualizando bodega id: {bodega_id} ---")
         try:
+            # Tipo Fragancias → siempre es bodega principal
+            if (tipo or "").strip().upper() == "FRAGANCIAS":
+                es_principal = True
+            if descripcion:
+                descripcion = descripcion.strip().title()
             bodega = run_query(
                 """
                 UPDATE bodegas
@@ -159,11 +186,16 @@ class BodegasService:
                     ubicacion = %s,
                     es_principal = COALESCE(%s, es_principal),
                     cuentas_elisa = COALESCE(%s, cuentas_elisa),
+                    orden = COALESCE(%s, orden),
+                    descripcion = COALESCE(%s, descripcion),
                     dirty = true
                 WHERE id = %s
                 RETURNING *
                 """,
-                (nombre, tipo, es_principal, cuentas_elisa, bodega_id),
+                (
+                    nombre, tipo, es_principal, cuentas_elisa, orden,
+                    descripcion, bodega_id,
+                ),
                 fetch_one=True,
             )
 
