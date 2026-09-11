@@ -178,7 +178,6 @@ class StatusHeader:
             return
 
         dlg, barra, texto, detalle = self._dialogo_sync()
-        self._page.overlay.append(dlg)
         self._page.show_dialog(dlg)
 
         def _on_result(result):
@@ -233,11 +232,15 @@ class StatusHeader:
             ],
             actions_alignment=ft.MainAxisAlignment.END,
         )
-        self._page.overlay.append(dlg)
         self._page.show_dialog(dlg)
 
     def _cerrar_dialogo(self, dlg):
-        dlg.open = False
+        try:
+            self._page.pop_dialog()
+        except Exception:
+            dlg.open = False
+            if dlg in self._page.overlay:
+                self._page.overlay.remove(dlg)
         self._page.update()
 
     def _sincronizar_desde_pendientes(self, dlg):
@@ -247,7 +250,6 @@ class StatusHeader:
         self._page.update()
 
         loading, barra, texto, detalle = self._dialogo_sync()
-        self._page.overlay.append(loading)
         self._page.show_dialog(loading)
 
         def _on_result(result):

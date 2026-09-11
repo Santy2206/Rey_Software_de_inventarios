@@ -26,6 +26,17 @@ def App(page: ft.Page):
     page.title = "REY Inventarios"
     page.padding = 0
 
+    # Scrollbar siempre visible y arrastrable en toda la app (escritorio).
+    page.theme = ft.Theme(
+        scrollbar_theme=ft.ScrollbarTheme(
+            thumb_visibility=True,
+            interactive=True,
+            thickness=7,
+            radius=4,
+            thumb_color="#C7C7C7",
+        )
+    )
+
     # Hacer que page.update() sea seguro desde hilos de fondo:
     # si se llama desde un thread secundario, se programa en el loop de UI.
     _orig_update = page.update

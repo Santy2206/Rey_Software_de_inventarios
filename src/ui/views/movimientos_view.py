@@ -145,6 +145,10 @@ class _MovimientosView(ft.Container):
                 ft.DropdownOption(key=b["id"], text=label_bodega(b))
                 for b in self._bodegas
             ]
+            self.bodega_destino.options = [
+                ft.DropdownOption(key=b["id"], text=label_bodega(b))
+                for b in self._bodegas
+            ]
 
         res_productos = ProductosService.get_all()
         if res_productos.get("success"):
@@ -198,6 +202,8 @@ class _MovimientosView(ft.Container):
                 ft.DropdownOption(key="egreso", text="Salida"),
                 ft.DropdownOption(key="ajuste", text="Ajuste"),
                 ft.DropdownOption(key="baja", text="Baja"),
+                ft.DropdownOption(key="traslado", text="Traslado entre bodegas"),
+                ft.DropdownOption(key="preparacion", text="Preparación (fragancia)"),
             ],
             on_select=self._actualizar_tipo,
         )
@@ -207,6 +213,12 @@ class _MovimientosView(ft.Container):
             expand=True,
             options=[],
             on_select=self._on_bodega_cambiada,
+        )
+        self.bodega_destino = ft.Dropdown(
+            label="Bodega destino *",
+            expand=True,
+            options=[],
+            visible=False,
         )
         self.producto = ft.Dropdown(label="Producto *", expand=True, options=[])
         self.cantidad = ft.TextField(
@@ -239,7 +251,14 @@ class _MovimientosView(ft.Container):
                 spacing=20,
                 controls=[
                     self.tipo,
-                    ft.Row(spacing=15, controls=[self.bodega, self.producto]),
+                    ft.Row(
+                        spacing=15,
+                        controls=[
+                            self.bodega,
+                            self.bodega_destino,
+                            self.producto,
+                        ],
+                    ),
                     self.cantidad,
                     self.motivo,
                     ft.Row(
@@ -256,8 +275,49 @@ class _MovimientosView(ft.Container):
             "egreso": ("Registrar Salida", ft.Icons.UPLOAD, "#DC2626"),
             "ajuste": ("Registrar Ajuste", ft.Icons.TUNE, "#D97706"),
             "baja": ("Registrar Baja", ft.Icons.DELETE, "#7C2D12"),
+            "traslado": (
+                "Registrar Traslado",
+                ft.Icons.SWAP_HORIZ,
+                "#0D9488",
+            ),
+            "preparacion": (
+                "Registrar Preparación",
+                ft.Icons.SCIENCE,
+                "#4338CA",
+            ),
         }
         texto, icono, color = textos.get(self.tipo.value, textos["ingreso"])
+
+        es_prep = self.tipo.value == "preparacion"
+        es_traslado = self.tipo.value == "traslado"
+        self.bodega_destino.visible = es_traslado
+        if not es_traslado:
+            self.bodega_destino.value = None
+        self.cantidad.label = (
+            "Cantidad en ml a preparar *" if es_prep else "Cantidad *"
+        )
+        if es_prep:
+            self.bodega.label = "Bodega (fija: Venta Fragancias)"
+        elif es_traslado:
+            self.bodega.label = "Bodega origen *"
+        else:
+            self.bodega.label = "Bodega *"
+        self.bodega.disabled = es_prep
+
+        if es_prep:
+            # Preparación: la esencia siempre sale de Venta Fragancias
+            bodega_venta = next(
+                (
+                    b for b in self._bodegas
+                    if "VENTA" in (b.get("nombre") or "").upper()
+                ),
+                None,
+            )
+            if bodega_venta:
+                self.bodega.value = bodega_venta["id"]
+                self._on_bodega_cambiada()
+        else:
+            self.bodega.disabled = False
 
         self.boton_registrar.text = texto
         self.boton_registrar.icon = icono
@@ -298,12 +358,12 @@ class _MovimientosView(ft.Container):
             return
 
         try:
-            cantidad = int(cantidad_raw)
+            cantidad = float(cantidad_raw.replace(",", "."))
             if cantidad <= 0:
                 raise ValueError
         except ValueError:
             self._mostrar_snack(
-                "⚠️ La cantidad debe ser un número entero mayor a 0.",
+                "⚠️ La cantidad debe ser un número mayor a 0.",
                 error=True,
             )
             return
@@ -319,8 +379,37 @@ class _MovimientosView(ft.Container):
         motivo = (self.motivo.value or "").strip()
         tipo = self.tipo.value
 
+        if tipo == "traslado":
+            if not self.bodega_destino.value:
+                self._mostrar_snack(
+                    "⚠️ Selecciona la bodega destino del traslado.",
+                    error=True,
+                )
+                return
+            if str(self.bodega_destino.value) == str(bodega_id):
+                self._mostrar_snack(
+                    "⚠️ La bodega destino debe ser distinta a la de origen.",
+                    error=True,
+                )
+                return
+
         def _worker():
-            if tipo == "ingreso":
+            if tipo == "traslado":
+                result = MovimientosService.registrar_traslado(
+                    producto_id=producto_id,
+                    bodega_destino_id=str(self.bodega_destino.value),
+                    cantidad=cantidad,
+                    motivo=motivo,
+                    usuario_id=usuario_id,
+                )
+            elif tipo == "preparacion":
+                result = MovimientosService.registrar_preparacion(
+                    producto_esencia_id=producto_id,
+                    cantidad_ml=cantidad,
+                    motivo=motivo,
+                    usuario_id=usuario_id,
+                )
+            elif tipo == "ingreso":
                 result = MovimientosService.registrar_entrada(
                     producto_id, bodega_id, cantidad, motivo, usuario_id
                 )
@@ -346,6 +435,7 @@ class _MovimientosView(ft.Container):
         threading.Thread(target=_worker, daemon=True).start()
 
     def _limpiar_formulario(self):
+        self.bodega.disabled = False
         self.bodega.value = None
         self._on_bodega_cambiada()  # restaura la lista completa de productos
         self.cantidad.value = ""

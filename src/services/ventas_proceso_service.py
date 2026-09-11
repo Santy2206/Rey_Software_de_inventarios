@@ -193,6 +193,8 @@ def _buscar_envase(envase: str | None, tamano_ml) -> dict | None:
               AND p.nombre ~* %s
             ORDER BY
               CASE WHEN b.nombre ILIKE '%%envase%%' THEN 0 ELSE 1 END,
+              CASE WHEN UPPER(p.nombre) LIKE '%%ROSCA%%' THEN 0 ELSE 1 END,
+              CASE WHEN UPPER(p.nombre) LIKE '%%PLASTICO%%' THEN 0 ELSE 1 END,
               LENGTH(p.nombre), p.nombre
             LIMIT 20
             """,
@@ -228,6 +230,72 @@ def _buscar_envase(envase: str | None, tamano_ml) -> dict | None:
         if str(tam) in re.sub(r"\s+", "", nom):
             return dict(r)
     return dict(rows[0])
+
+
+def _buscar_terminado(codigo: str | None) -> dict | None:
+    """
+    Busca el producto con ese código en la bodega 'Fragancias Terminado'.
+    Usado por ventas PT (802) y cremas elaboradas (808).
+    """
+    if not codigo:
+        return None
+    rows = run_query(
+        """
+        SELECT p.id, p.nombre, p.codigo, p.bodega_id,
+               b.nombre AS bodega_nombre, p.stock_actual
+        FROM productos p
+        JOIN bodegas b ON b.id = p.bodega_id
+        WHERE UPPER(b.nombre) LIKE '%TERMINADO%'
+          AND UPPER(p.codigo) = %s
+        ORDER BY p.nombre
+        LIMIT 1
+        """,
+        (str(codigo).upper().strip(),),
+    )
+    return dict(rows[0]) if rows else None
+
+
+def _buscar_alcohol() -> dict | None:
+    """Producto genérico de la bodega 'Alcohol' (insumo de las recetas)."""
+    rows = run_query(
+        """
+        SELECT p.id, p.nombre, p.codigo, p.bodega_id,
+               b.nombre AS bodega_nombre
+        FROM productos p
+        JOIN bodegas b ON b.id = p.bodega_id
+        WHERE UPPER(b.nombre) = 'ALCOHOL'
+        ORDER BY p.nombre
+        LIMIT 1
+        """,
+    )
+    return dict(rows[0]) if rows else None
+
+
+def _buscar_crema_base() -> dict | None:
+    """Crema base en la bodega 'Cremas Perfumas' (cuenta 41353808)."""
+    rows = run_query(
+        """
+        SELECT p.id, p.nombre, p.codigo, p.bodega_id,
+               b.nombre AS bodega_nombre
+        FROM productos p
+        JOIN bodegas b ON b.id = p.bodega_id
+        WHERE UPPER(b.nombre) LIKE '%CREMAS%'
+        ORDER BY p.nombre
+        LIMIT 1
+        """,
+    )
+    return dict(rows[0]) if rows else None
+
+
+def _es_pt(fila: dict) -> bool:
+    """True si el concepto termina en 'PT' → usa producto terminado."""
+    attrs = fila.get("atributos")
+    if isinstance(attrs, dict) and attrs.get("es_pt"):
+        return True
+    for campo in ("concepto_limpio", "concepto"):
+        if re.search(r"\bPT\s*$", str(fila.get(campo) or ""), re.IGNORECASE):
+            return True
+    return False
 
 
 def _producto_ids_de_fila(fila: dict) -> list[str]:
@@ -350,20 +418,92 @@ class VentasProcesoService:
             # ---- 802 / 808 perfume o crema elaborada ----
             if cuenta in _CTAS_PERFUME_MEZCLA or meta["es_combo"]:
                 tamano = attrs.get("tamano_ml")
+                codigos = _as_list(attrs.get("codigos"))
+                codigo = attrs.get("codigo") or (codigos[0] if len(codigos) == 1 else None)
+
+                # === 802 con "PT": producto ya terminado ===
+                if cuenta == _CTA_PERFUME and _es_pt(fila):
+                    term = _buscar_terminado(codigo)
+                    if not term:
+                        return {
+                            "success": False,
+                            "message": (
+                                f"Venta PT: no hay fragancia terminada "
+                                f"para código {codigo or '—'}"
+                            ),
+                            "data": None,
+                        }
+                    # El stock de terminado está en gramos ≈ ml del envase
+                    cant_pt = _q4(_d(tamano or 0) * cantidad_fila)
+                    if cant_pt <= 0:
+                        cant_pt = Decimal(cantidad_fila)
+                    items.append({"producto_id": str(term["id"]), "cantidad": cant_pt})
+                    meta["producto_terminado"] = True
+                    meta["terminado_id"] = str(term["id"])
+                    return {"success": True, "message": "OK", "data": {"items": items, "meta": meta}}
+
+                # === 808 crema elaborada: fragancia terminada + crema base ===
+                if cuenta == _CTA_CREMAS_ELAB:
+                    gramos = attrs.get("gramos_esencia_total")
+                    if gramos is None:
+                        gramos = gramos_esencia_crema(tamano)
+                    if gramos is None or tamano is None:
+                        # Sin tamaño confiable: vender el producto
+                        # vinculado como unidad simple, sin mezcla.
+                        meta["sin_regla_esencia"] = True
+                        for pid in producto_ids:
+                            items.append(
+                                {"producto_id": pid, "cantidad": Decimal(cantidad_fila)}
+                            )
+                        return {
+                            "success": True,
+                            "message": "OK (sin mezcla)",
+                            "data": {"items": items, "meta": meta},
+                        }
+                    term = _buscar_terminado(codigo)
+                    if not term:
+                        return {
+                            "success": False,
+                            "message": (
+                                f"No hay fragancia terminada para "
+                                f"código {codigo or '—'} (crema 808)"
+                            ),
+                            "data": None,
+                        }
+                    frag_g = _q4(Decimal(str(gramos)) * cantidad_fila)
+                    crema_g = _q4((_d(tamano) - Decimal(str(gramos))) * cantidad_fila)
+                    crema = _buscar_crema_base()
+                    if not crema:
+                        return {
+                            "success": False,
+                            "message": "No hay crema base en bodega 'Cremas Perfumas'",
+                            "data": None,
+                        }
+                    items.append({"producto_id": str(term["id"]), "cantidad": frag_g})
+                    items.append({"producto_id": str(crema["id"]), "cantidad": crema_g})
+                    meta["crema_terminado_id"] = str(term["id"])
+                    meta["crema_base_id"] = str(crema["id"])
+                    meta["gramos_total"] = float(frag_g)
+                    meta["gramos_crema_base"] = float(crema_g)
+                    return {"success": True, "message": "OK", "data": {"items": items, "meta": meta}}
+
+                # === 802 normal: esencia + alcohol (+ envase si lo menciona) ===
                 gramos = attrs.get("gramos_esencia_total")
                 if gramos is None:
-                    if cuenta == _CTA_CREMAS_ELAB:
-                        gramos = gramos_esencia_crema(tamano)
-                    else:
-                        gramos = gramos_esencia_por_ml(tamano)
+                    gramos = gramos_esencia_por_ml(tamano)
                 if gramos is None:
+                    # Tamaño fuera de la tabla de mezcla (perfumeros 3-15 ml,
+                    # tamaños raros o sin tamaño): no se arma mezcla, se
+                    # vende el producto vinculado como unidad simple.
+                    meta["sin_regla_esencia"] = True
+                    for pid in producto_ids:
+                        items.append(
+                            {"producto_id": pid, "cantidad": Decimal(cantidad_fila)}
+                        )
                     return {
-                        "success": False,
-                        "message": (
-                            f"Sin regla de esencia para {tamano} ml "
-                            "(cuenta perfume/crema)"
-                        ),
-                        "data": None,
+                        "success": True,
+                        "message": "OK (sin mezcla)",
+                        "data": {"items": items, "meta": meta},
                     }
                 gramos_total = _q4(Decimal(str(gramos)) * cantidad_fila)
                 n = len(producto_ids)
@@ -372,6 +512,25 @@ class VentasProcesoService:
                 meta["gramos_por_codigo"] = [float(p) for p in partes]
                 for pid, g in zip(producto_ids, partes):
                     items.append({"producto_id": pid, "cantidad": g})
+
+                # Alcohol: ml del envase − gramos de esencia (por unidad)
+                if tamano is not None:
+                    alcohol = _buscar_alcohol()
+                    if not alcohol:
+                        return {
+                            "success": False,
+                            "message": "No hay producto de alcohol en bodega 'Alcohol'",
+                            "data": None,
+                        }
+                    alcohol_g = _q4(
+                        (_d(tamano) - Decimal(str(gramos))) * cantidad_fila
+                    )
+                    if alcohol_g > 0:
+                        items.append(
+                            {"producto_id": str(alcohol["id"]), "cantidad": alcohol_g}
+                        )
+                        meta["alcohol_id"] = str(alcohol["id"])
+                        meta["gramos_alcohol"] = float(alcohol_g)
 
                 envase = attrs.get("envase")
                 if envase and str(envase).upper() != "RECARGA":
@@ -393,6 +552,9 @@ class VentasProcesoService:
                     )
                     meta["envase_id"] = str(env["id"])
                     meta["envase_nombre"] = env.get("nombre")
+                else:
+                    # Sin envase en el concepto → RECARGA (esencia + alcohol)
+                    meta["es_recarga"] = True
                 return {"success": True, "message": "OK", "data": {"items": items, "meta": meta}}
 
             # ---- 801 esencia pura ----

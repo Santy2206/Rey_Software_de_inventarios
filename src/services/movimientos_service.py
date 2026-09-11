@@ -292,6 +292,364 @@ class MovimientosService:
             }
 
     @staticmethod
+    def registrar_preparacion(
+        producto_esencia_id: str,
+        cantidad_ml: float,
+        motivo: str,
+        usuario_id: str,
+    ):
+        """
+        Registra la PREPARACIÓN de una fragancia terminada.
+
+        Flujo (una sola transacción):
+          1. Egreso de esencia_g gramos del producto en 'Venta Fragancias'.
+             esencia_g = MEZCLA_ML_A_GRAMOS[cantidad_ml].
+          2. Egreso de alcohol_g gramos del producto genérico de la
+             bodega 'Alcohol'. alcohol_g = cantidad_ml - esencia_g.
+          3. Ingreso de cantidad_ml gramos al producto con el mismo
+             código en 'Fragancias Terminado' (se crea si no existe).
+
+        Si falta stock en esencia o alcohol, aborta sin tocar nada.
+        """
+        from src.services.elisa_concepto_parser import gramos_esencia_por_ml
+
+        print(f"--- Registrando PREPARACIÓN de {cantidad_ml} ml ---")
+        try:
+            esencia_g = gramos_esencia_por_ml(cantidad_ml)
+            if esencia_g is None:
+                return {
+                    "success": False,
+                    "message": (
+                        f"No hay regla de mezcla para {cantidad_ml} ml "
+                        "(tamaños válidos: 20–125 ml)."
+                    ),
+                }
+            alcohol_g = round(float(cantidad_ml) - esencia_g, 4)
+            total_g = round(float(cantidad_ml), 4)
+
+            with get_cursor() as cur:
+                # 1) Producto esencia (debe estar en Venta Fragancias)
+                cur.execute(
+                    """
+                    SELECT p.id, p.nombre, p.codigo, p.stock_actual,
+                           b.nombre AS bodega_nombre, p.bodega_id
+                    FROM productos p
+                    JOIN bodegas b ON b.id = p.bodega_id
+                    WHERE p.id = %s
+                    FOR UPDATE OF p
+                    """,
+                    (producto_esencia_id,),
+                )
+                esencia = cur.fetchone()
+                if not esencia:
+                    return {"success": False, "message": "Producto esencia no encontrado"}
+                if "VENTA" not in (esencia["bodega_nombre"] or "").upper():
+                    return {
+                        "success": False,
+                        "message": (
+                            "La esencia debe estar en la bodega "
+                            f"'Venta Fragancias' (está en '{esencia['bodega_nombre']}')."
+                        ),
+                    }
+                if esencia["stock_actual"] < esencia_g:
+                    return {
+                        "success": False,
+                        "message": (
+                            f"Esencia insuficiente: hay {esencia['stock_actual']} g, "
+                            f"se necesitan {esencia_g} g."
+                        ),
+                    }
+
+                # 2) Producto alcohol genérico en bodega 'Alcohol'
+                cur.execute(
+                    """
+                    SELECT p.id, p.nombre, p.stock_actual
+                    FROM productos p
+                    JOIN bodegas b ON b.id = p.bodega_id
+                    WHERE UPPER(b.nombre) = 'ALCOHOL'
+                    ORDER BY p.nombre
+                    LIMIT 1
+                    FOR UPDATE OF p
+                    """,
+                )
+                alcohol = cur.fetchone()
+                if not alcohol:
+                    return {
+                        "success": False,
+                        "message": "No hay producto de alcohol en la bodega 'Alcohol'",
+                    }
+                if alcohol["stock_actual"] < alcohol_g:
+                    return {
+                        "success": False,
+                        "message": (
+                            f"Alcohol insuficiente: hay {alcohol['stock_actual']} g, "
+                            f"se necesitan {alcohol_g} g."
+                        ),
+                    }
+
+                # 3) Bodega 'Fragancias Terminado' + producto destino
+                cur.execute(
+                    "SELECT id FROM bodegas WHERE UPPER(nombre) LIKE '%TERMINADO%' LIMIT 1"
+                )
+                bodega_term = cur.fetchone()
+                if not bodega_term:
+                    return {
+                        "success": False,
+                        "message": "No existe la bodega 'Fragancias Terminado'",
+                    }
+                codigo = (esencia.get("codigo") or "").strip().upper()
+                if not codigo:
+                    return {
+                        "success": False,
+                        "message": "El producto esencia no tiene código asignado",
+                    }
+
+                cur.execute(
+                    """
+                    SELECT id, stock_actual FROM productos
+                    WHERE bodega_id = %s AND UPPER(codigo) = %s
+                    LIMIT 1
+                    FOR UPDATE
+                    """,
+                    (bodega_term["id"], codigo),
+                )
+                terminado = cur.fetchone()
+                if not terminado:
+                    cur.execute(
+                        """
+                        INSERT INTO productos
+                            (bodega_id, nombre, codigo, stock_actual, dirty)
+                        VALUES (%s, %s, %s, 0, true)
+                        RETURNING id, stock_actual
+                        """,
+                        (
+                            bodega_term["id"],
+                            f"{codigo} TERMINADO",
+                            codigo,
+                        ),
+                    )
+                    terminado = cur.fetchone()
+
+                motivo_txt = motivo or (
+                    f"Preparación {cantidad_ml} ml: -{esencia_g}g esencia, "
+                    f"-{alcohol_g}g alcohol → {total_g}g en Terminado"
+                )
+
+                def _mov(prod_id, bodega_id, tipo, cantidad, detalle):
+                    cur.execute(
+                        """
+                        INSERT INTO movimientos
+                            (producto_id, bodega_id, usuario_id, tipo, cantidad, motivo, fecha)
+                        VALUES (%s, %s, %s, %s, %s, %s, NOW())
+                        """,
+                        (prod_id, bodega_id, usuario_id, tipo, cantidad, detalle),
+                    )
+
+                # Egreso esencia
+                _mov(
+                    esencia["id"], esencia["bodega_id"], "egreso", esencia_g,
+                    f"Preparación {codigo}: -{esencia_g}g esencia ({motivo_txt})",
+                )
+                cur.execute(
+                    "UPDATE productos SET stock_actual = stock_actual - %s, dirty = true WHERE id = %s",
+                    (esencia_g, esencia["id"]),
+                )
+                # Egreso alcohol
+                cur.execute(
+                    "SELECT bodega_id FROM productos WHERE id = %s",
+                    (alcohol["id"],),
+                )
+                _mov(
+                    alcohol["id"],
+                    cur.fetchone()["bodega_id"],
+                    "egreso",
+                    alcohol_g,
+                    f"Preparación {codigo}: -{alcohol_g}g alcohol ({motivo_txt})",
+                )
+                cur.execute(
+                    "UPDATE productos SET stock_actual = stock_actual - %s, dirty = true WHERE id = %s",
+                    (alcohol_g, alcohol["id"]),
+                )
+                # Ingreso a Terminado
+                _mov(
+                    terminado["id"], bodega_term["id"], "ingreso", total_g,
+                    f"Preparación {codigo}: +{total_g}g ({motivo_txt})",
+                )
+                cur.execute(
+                    "UPDATE productos SET stock_actual = stock_actual + %s, dirty = true WHERE id = %s",
+                    (total_g, terminado["id"]),
+                )
+
+            print(
+                f"Preparación {codigo}: -{esencia_g}g esencia, "
+                f"-{alcohol_g}g alcohol, +{total_g}g terminado"
+            )
+            _registrar_bitacora_stock(
+                "PREPARACION",
+                terminado["id"],
+                f"Preparación {codigo} {cantidad_ml}ml: "
+                f"-{esencia_g}g esencia, -{alcohol_g}g alcohol",
+                usuario_id,
+            )
+            return {
+                "success": True,
+                "message": (
+                    f"Preparación lista: {codigo} {cantidad_ml} ml "
+                    f"(-{esencia_g}g esencia, -{alcohol_g}g alcohol)"
+                ),
+            }
+        except Exception as e:
+            error_msg = str(e)
+            print(f"Error en registrar_preparacion: {error_msg}")
+            return {
+                "success": False,
+                "message": f"Error al registrar preparación: {error_msg}",
+            }
+
+    @staticmethod
+    def registrar_traslado(
+        producto_id: str,
+        bodega_destino_id: str,
+        cantidad: float,
+        motivo: str,
+        usuario_id: str,
+    ):
+        """
+        Traslada stock de un producto a OTRA bodega en una transacción:
+          1. Egreso del producto en su bodega actual.
+          2. Ingreso del producto equivalente (mismo código) en la bodega
+             destino; se crea si no existe.
+
+        Ej: pasar 200 g de esencia '20M' de Fragancias Bodega a Venta
+        Fragancias.
+        """
+        print(f"--- Registrando TRASLADO de {cantidad} unidades ---")
+        try:
+            with get_cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT p.id, p.nombre, p.codigo, p.precio, p.descripcion,
+                           p.stock_actual, p.bodega_id, b.nombre AS bodega_nombre
+                    FROM productos p
+                    JOIN bodegas b ON b.id = p.bodega_id
+                    WHERE p.id = %s
+                    FOR UPDATE OF p
+                    """,
+                    (producto_id,),
+                )
+                origen = cur.fetchone()
+                if not origen:
+                    return {"success": False, "message": "Producto no encontrado"}
+
+                if str(origen["bodega_id"]) == str(bodega_destino_id):
+                    return {
+                        "success": False,
+                        "message": "La bodega destino debe ser distinta a la de origen",
+                    }
+
+                if origen["stock_actual"] < cantidad:
+                    return {
+                        "success": False,
+                        "message": (
+                            f"Stock insuficiente en {origen['bodega_nombre']}: "
+                            f"hay {origen['stock_actual']}, se piden {cantidad}."
+                        ),
+                    }
+
+                # Producto destino: mismo código (o mismo nombre si no hay código)
+                cur.execute(
+                    """
+                    SELECT id, stock_actual FROM productos
+                    WHERE bodega_id = %s
+                      AND (
+                          (codigo IS NOT NULL AND codigo != ''
+                           AND UPPER(codigo) = UPPER(%s))
+                          OR UPPER(nombre) = UPPER(%s)
+                      )
+                    LIMIT 1
+                    FOR UPDATE
+                    """,
+                    (bodega_destino_id, origen.get("codigo") or "\x00",
+                     origen["nombre"]),
+                )
+                destino = cur.fetchone()
+                if not destino:
+                    cur.execute(
+                        """
+                        INSERT INTO productos
+                            (bodega_id, nombre, codigo, precio, descripcion,
+                             stock_actual, dirty)
+                        VALUES (%s, %s, %s, %s, %s, 0, true)
+                        RETURNING id, stock_actual
+                        """,
+                        (
+                            bodega_destino_id,
+                            origen["nombre"],
+                            origen.get("codigo"),
+                            origen.get("precio"),
+                            origen.get("descripcion"),
+                        ),
+                    )
+                    destino = cur.fetchone()
+
+                motivo_txt = motivo or (
+                    f"Traslado {origen['bodega_nombre']} → destino"
+                )
+
+                # Egreso origen (tipo 'transferencia' por el CHECK constraint)
+                cur.execute(
+                    """
+                    INSERT INTO movimientos
+                        (producto_id, bodega_id, usuario_id, tipo,
+                         cantidad, motivo, fecha)
+                    VALUES (%s, %s, %s, 'transferencia', %s, %s, NOW())
+                    """,
+                    (origen["id"], origen["bodega_id"], usuario_id,
+                     cantidad, f"Traslado salida: {motivo_txt}"),
+                )
+                cur.execute(
+                    "UPDATE productos SET stock_actual = stock_actual - %s, dirty = true WHERE id = %s",
+                    (cantidad, origen["id"]),
+                )
+                # Ingreso destino
+                cur.execute(
+                    """
+                    INSERT INTO movimientos
+                        (producto_id, bodega_id, usuario_id, tipo,
+                         cantidad, motivo, fecha)
+                    VALUES (%s, %s, %s, 'transferencia', %s, %s, NOW())
+                    """,
+                    (destino["id"], bodega_destino_id, usuario_id,
+                     cantidad, f"Traslado entrada: {motivo_txt}"),
+                )
+                cur.execute(
+                    "UPDATE productos SET stock_actual = stock_actual + %s, dirty = true WHERE id = %s",
+                    (cantidad, destino["id"]),
+                )
+
+            _registrar_bitacora_stock(
+                "TRASLADO",
+                str(destino["id"]),
+                f"Traslado de {cantidad} desde {origen['bodega_nombre']} "
+                f"({origen['nombre']})",
+                usuario_id,
+            )
+            return {
+                "success": True,
+                "message": (
+                    f"Traslado OK: {cantidad} de '{origen['nombre']}' "
+                    f"→ bodega destino"
+                ),
+            }
+        except Exception as e:
+            error_msg = str(e)
+            print(f"Error en registrar_traslado: {error_msg}")
+            return {
+                "success": False,
+                "message": f"Error al registrar traslado: {error_msg}",
+            }
+
+    @staticmethod
     def registrar_baja(
         producto_id: str, bodega_id: str, cantidad: int, motivo: str, usuario_id: str
     ):

@@ -78,17 +78,23 @@ class _ClientesView(ft.Container):
             width=float("inf"),
         )
         self._loading_ring = ft.ProgressRing(width=32, height=32, visible=True)
-        self._cards_area = ft.Column(
+        self._lista_scroll = ft.Column(
             spacing=12,
             expand=True,
             scroll=ft.ScrollMode.AUTO,
             controls=[
+                ft.Row(controls=[self._buscador]),
+                self._tabla,
+            ],
+        )
+        self._cards_area = ft.Stack(
+            expand=True,
+            controls=[
+                self._lista_scroll,
                 ft.Row(
                     [self._loading_ring],
                     alignment=ft.MainAxisAlignment.CENTER,
                 ),
-                ft.Row(controls=[self._buscador]),
-                self._tabla,
             ],
         )
 

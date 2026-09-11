@@ -18,6 +18,7 @@ productos_view.py sigue siendo un stub — cuando la construyan,
    'unidad_medida' ni 'stock', que no existen en esta tabla).
 """
 
+import math
 import os
 from pathlib import Path
 
@@ -615,12 +616,40 @@ class ProductosService:
                     "message": "No se encontró una columna de nombre en el archivo",
                 }
 
+            # Bodegas espejo para réplica automática: cuando se importa a
+            # 'Fragancias Bodega', también crear en Venta/Terminado.
+            bodegas_replica: list[str] = []
+            try:
+                bod = run_query(
+                    "SELECT nombre FROM bodegas WHERE id = %s",
+                    (bodega_id,),
+                    fetch_one=True,
+                )
+                nombre_bod = (bod["nombre"] or "").upper() if bod else ""
+                if "BODEGA" in nombre_bod and "FRAGANCIA" in nombre_bod:
+                    extras = run_query(
+                        """
+                        SELECT id FROM bodegas
+                        WHERE UPPER(nombre) LIKE '%%VENTA%%FRAGANCIA%%'
+                           OR UPPER(nombre) LIKE '%%TERMINADO%%'
+                        """
+                    )
+                    bodegas_replica = [str(b["id"]) for b in extras or []]
+            except Exception as e:
+                print(f"   Aviso: no se pudo resolver réplica de bodegas: {e}")
+
             creados = 0
             errores = 0
+            omitidos = 0
             detalle = []
 
             for _, fila in df.iterrows():
-                nombre = (fila.get(col_nombre) or "").strip()
+                nombre_raw = fila.get(col_nombre)
+                nombre = (
+                    str(nombre_raw).strip()
+                    if pd.notna(nombre_raw)
+                    else ""
+                )
                 if not nombre:
                     errores += 1
                     detalle.append("Fila con nombre vacío omitida")
@@ -646,14 +675,50 @@ class ProductosService:
                 precio_raw = fila.get(col_precio) if col_precio else 0
                 try:
                     precio = float(str(precio_raw).replace(",", "").strip() or 0)
+                    if math.isnan(precio) or math.isinf(precio):
+                        precio = 0.0
                 except ValueError:
                     precio = 0.0
 
                 stock_raw = fila.get(col_stock) if col_stock else 0
                 try:
-                    stock = int(str(stock_raw).replace(",", "").strip() or 0)
-                except ValueError:
+                    stock_f = float(str(stock_raw).replace(",", "").strip() or 0)
+                    stock = int(stock_f)
+                    if math.isnan(stock_f) or math.isinf(stock_f):
+                        stock = 0
+                except (ValueError, OverflowError):
                     stock = 0
+
+                # Dedup: si trae codigo, dedup solo por codigo (dos
+                # fragancias distintas pueden compartir nombre). Si no
+                # trae codigo, dedup por nombre.
+                if codigo:
+                    ya_existe = run_query(
+                        """
+                        SELECT 1 FROM productos
+                        WHERE bodega_id = %s
+                          AND codigo IS NOT NULL AND codigo != ''
+                          AND UPPER(codigo) = UPPER(%s)
+                        LIMIT 1
+                        """,
+                        (bodega_id, codigo),
+                        fetch_one=True,
+                    )
+                else:
+                    ya_existe = run_query(
+                        """
+                        SELECT 1 FROM productos
+                        WHERE bodega_id = %s
+                          AND UPPER(nombre) = UPPER(%s)
+                        LIMIT 1
+                        """,
+                        (bodega_id, nombre),
+                        fetch_one=True,
+                    )
+                if ya_existe:
+                    omitidos += 1
+                    detalle.append(f"Omitido (ya existe): {nombre}")
+                    continue
 
                 resultado = ProductosService.create(
                     nombre=nombre,
@@ -668,6 +733,48 @@ class ProductosService:
                 if resultado.get("success"):
                     creados += 1
                     detalle.append(f"Creado: {nombre}")
+                    # Réplica automática en bodegas de fragancias:
+                    # si el destino es 'Fragancias Bodega', el mismo producto
+                    # (mismo código) se crea también en 'Venta Fragancias' y
+                    # 'Fragancias Terminado' con stock 0.
+                    for bid_extra in bodegas_replica:
+                        try:
+                            if codigo:
+                                existe = run_query(
+                                    """
+                                    SELECT 1 FROM productos
+                                    WHERE bodega_id = %s
+                                      AND codigo IS NOT NULL AND codigo != ''
+                                      AND UPPER(codigo) = UPPER(%s)
+                                    LIMIT 1
+                                    """,
+                                    (bid_extra, codigo),
+                                    fetch_one=True,
+                                )
+                            else:
+                                existe = run_query(
+                                    """
+                                    SELECT 1 FROM productos
+                                    WHERE bodega_id = %s
+                                      AND UPPER(nombre) = UPPER(%s)
+                                    LIMIT 1
+                                    """,
+                                    (bid_extra, nombre),
+                                    fetch_one=True,
+                                )
+                            if not existe:
+                                ProductosService.create(
+                                    nombre=nombre,
+                                    bodega_id=bid_extra,
+                                    descripcion=descripcion,
+                                    sku=sku,
+                                    codigo=codigo,
+                                    precio=precio,
+                                    stock_actual=0,
+                                )
+                                detalle.append(f"  ↳ replicado en bodega {bid_extra}")
+                        except Exception as ex:
+                            detalle.append(f"  ↳ réplica falló: {ex}")
                 else:
                     errores += 1
                     detalle.append(f"Error en '{nombre}': {resultado.get('message')}")
@@ -676,10 +783,12 @@ class ProductosService:
                 "success": True,
                 "message": (
                     f"Importación finalizada: {creados} creados, "
+                    f"{omitidos} omitidos (ya existían), "
                     f"{errores} errores"
                 ),
                 "data": {
                     "creados": creados,
+                    "omitidos": omitidos,
                     "errores": errores,
                     "detalle": detalle,
                 },

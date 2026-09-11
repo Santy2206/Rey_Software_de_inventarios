@@ -418,6 +418,20 @@ class ClientesResolucionService:
             ClientesResolucionService.asegurar_cliente_generico()
 
             for fila in filas:
+                # Fila vacía del Excel (sin cuenta ni concepto): no aplica
+                if not (fila.get("concepto") or fila.get("cuenta")):
+                    run_query(
+                        """
+                        UPDATE ventas_import_raw
+                        SET estado_cliente = 'no_aplica',
+                            estado_resolucion = 'no_aplica',
+                            conflicto_cliente = NULL,
+                            error_proceso = 'Fila vacia del Excel'
+                        WHERE id = %s
+                        """,
+                        (fila["id"],),
+                    )
+                    continue
                 r = ClientesResolucionService.resolver_uno(
                     identidad=fila.get("identidad"),
                     nombre_tercero=fila.get("nombre_tercero"),

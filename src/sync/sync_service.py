@@ -23,6 +23,7 @@ Estrategia de reintento:
       consumo de red innecesario.
 """
 
+import math
 import queue
 import threading
 import traceback
@@ -39,10 +40,11 @@ from src.core.supabase_client import supabase
 _UPSERT_TIMEOUT_SEGUNDOS = 60
 
 
-def _upsert_con_timeout(payload: dict, tabla: str):
+def _upsert_con_timeout(payload, tabla: str):
     """
     Ejecuta supabase.table(tabla).upsert(payload) con timeout duro.
 
+    `payload` puede ser un dict (una fila) o una lista de dicts (lote).
     Retorna el objeto respuesta de Supabase.
     Lanza TimeoutError si el request no responde en el límite.
     """
@@ -66,6 +68,26 @@ def _upsert_con_timeout(payload: dict, tabla: str):
     if estado == "error":
         raise valor
     return valor
+
+
+# Tamaño de lote para upserts masivos. Un solo request por lote es mucho
+# más rápido que un request por fila (antes: N filas = N requests).
+_LOTE_UPSERT = 200
+
+
+def _marcar_sincronizadas(tabla: str, ids: list):
+    """Marca un grupo de filas como sincronizadas en un solo UPDATE."""
+    if not ids:
+        return
+    run_query(
+        f"""
+        UPDATE {tabla}
+        SET dirty = false,
+            synced_at = now()
+        WHERE id::text = ANY(%s)
+        """,
+        ([str(i) for i in ids],),
+    )
 
 
 # Orden de sincronización respetando FKs (padres primero).
@@ -102,7 +124,12 @@ def _serializar_valor(valor):
     if isinstance(valor, datetime):
         return valor.isoformat()
     if isinstance(valor, Decimal):
-        return float(valor)
+        f = float(valor)
+        if math.isnan(f) or math.isinf(f):
+            return None
+        return f
+    if isinstance(valor, float) and (math.isnan(valor) or math.isinf(valor)):
+        return None
     if isinstance(valor, dict):
         return {k: _serializar_valor(v) for k, v in valor.items()}
     if isinstance(valor, list):
@@ -230,38 +257,59 @@ class SyncService:
         subidos = 0
         fallidos = 0
         primer_error = None
-        for fila in filas:
-            fila_id = fila.get("id")
-            try:
-                payload = _preparar_fila(fila, tabla)
-                resp = _upsert_con_timeout(payload, tabla)
 
-                if resp is None or not getattr(resp, "data", None):
-                    raise Exception(f"Respuesta inesperada de Supabase: {resp}")
+        payloads = [
+            (fila.get("id"), _preparar_fila(fila, tabla)) for fila in filas
+        ]
 
-                if tiene_dirty:
-                    run_query(
-                        f"""
-                        UPDATE {tabla}
-                        SET dirty = false,
-                            synced_at = now()
-                        WHERE id = %s
-                        """,
-                        (fila_id,),
-                    )
-                subidos += 1
-            except Exception as e:
-                error_msg = str(e)
-                if primer_error is None:
-                    primer_error = error_msg
-                print(f"   Fallo al sincronizar {tabla} id={fila_id}: {error_msg}")
-                fallidos += 1
-            finally:
-                if on_row:
+        def _notificar(n):
+            if on_row:
+                for _ in range(n):
                     try:
                         on_row(tabla)
                     except Exception:
                         pass
+
+        # 1) Intentar por lotes: un request por _LOTE_UPSERT filas.
+        for i in range(0, len(payloads), _LOTE_UPSERT):
+            lote = payloads[i : i + _LOTE_UPSERT]
+            ids = [fid for fid, _ in lote]
+            cuerpo = [p for _, p in lote]
+            try:
+                resp = _upsert_con_timeout(cuerpo, tabla)
+                if resp is None or getattr(resp, "data", None) is None:
+                    raise Exception(f"Respuesta inesperada de Supabase: {resp}")
+                if tiene_dirty:
+                    _marcar_sincronizadas(tabla, ids)
+                subidos += len(lote)
+                _notificar(len(lote))
+            except Exception as e:
+                print(
+                    f"   Lote de {tabla} falló ({e}); "
+                    "reintentando fila por fila"
+                )
+                # 2) Fallback: fila por fila para aislar el registro malo.
+                for fila_id, payload in lote:
+                    try:
+                        resp = _upsert_con_timeout(payload, tabla)
+                        if resp is None or getattr(resp, "data", None) is None:
+                            raise Exception(
+                                f"Respuesta inesperada de Supabase: {resp}"
+                            )
+                        if tiene_dirty:
+                            _marcar_sincronizadas(tabla, [fila_id])
+                        subidos += 1
+                    except Exception as e2:
+                        error_msg = str(e2)
+                        if primer_error is None:
+                            primer_error = error_msg
+                        print(
+                            f"   Fallo al sincronizar {tabla} "
+                            f"id={fila_id}: {error_msg}"
+                        )
+                        fallidos += 1
+                    finally:
+                        _notificar(1)
 
         return {"subidos": subidos, "fallidos": fallidos, "error": primer_error}
 

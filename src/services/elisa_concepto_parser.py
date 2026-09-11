@@ -121,14 +121,14 @@ BODEGA_POR_CUENTA: dict[str, str] = {
     "41353802": "Venta Fragancias",
     "41353803": "Splash",
     "41353804": "Envases",
-    "41353805": "Cremas",
+    "41353805": "Cosmeticos",
     "41353806": "Aromatizantes",
     "41353807": "Bisuteria",
-    "41353808": "Venta Fragancias",
-    "41353809": "Marroquineria",
-    "41353810": "Empaques",
-    "41353811": "Aditivos",
-    "41353814": "Otros",
+    "41353808": "Cremas Perfumas",
+    "41353809": "Marroquiteria",
+    "41353810": "Varios",
+    "41353811": "Feromonas",
+    "41353814": "Humificadores",
 }
 
 _RE_UND = re.compile(
@@ -158,6 +158,9 @@ _RE_CODIGO_DOBLE = re.compile(r"\b(\d+)(MM|FF)\b", re.IGNORECASE)
 # Nota/código pegado al tamaño: "50ML0702 BARRIOS KELLY" → nota "0702 BARRIOS KELLY"
 _RE_NOTA_TRAS_ML = re.compile(r"\b\d+(?:[.,]\d+)?\s*ML\s*(\d{3,}\s+.+)$", re.IGNORECASE)
 _RE_OBSEQUIO = re.compile(r"\b(OBSEQUIO|REGALO|GRATIS)\b", re.IGNORECASE)
+# Sufijo "PT" al final del concepto: el vendedor usó producto terminado
+# de la bodega 'Fragancias Terminado' en vez de armar al vuelo.
+_RE_PT = re.compile(r"\bPT\b\s*$", re.IGNORECASE)
 _RE_MULTI_SPACE = re.compile(r"\s+")
 
 
@@ -220,6 +223,9 @@ def limpiar_concepto(concepto: str | None) -> dict[str, Any]:
     if "CIINDRICO" in texto:
         texto = texto.replace("CIINDRICO", "CILINDRICO")
         correcciones.append("CIINDRICO→CILINDRICO")
+    if re.search(r"\bCANLA\b", texto):
+        texto = re.sub(r"\bCANLA\b", "CANAL", texto)
+        correcciones.append("CANLA→CANAL")
     _fix(_RE_RECARGA_PARTIDA, "RECARGA", "RE CARGA→RECARGA")
     _fix(_RE_NL, "ML", "NL→ML")
 
@@ -276,6 +282,7 @@ def limpiar_concepto(concepto: str | None) -> dict[str, Any]:
     texto_principal = _RE_MULTI_SPACE.sub(" ", texto).strip(" -+/")
     concepto_limpio = _RE_MULTI_SPACE.sub(" ", original.upper().strip())
     concepto_limpio = concepto_limpio.replace("CIINDRICO", "CILINDRICO")
+    concepto_limpio = re.sub(r"\bCANLA\b", "CANAL", concepto_limpio)
     concepto_limpio = _RE_RECARGA_PARTIDA.sub("RECARGA", concepto_limpio)
     concepto_limpio = _RE_NL.sub("ML", concepto_limpio)
     concepto_limpio = _RE_DIGIT_SPACE.sub("", concepto_limpio)
@@ -484,6 +491,7 @@ def extraer_atributos(cuenta: str | None, concepto: str | None) -> dict[str, Any
         base["envase"] = envase
         base["tamano_ml"] = tamano_ml
         base["genero"] = _extraer_genero_de_codigos(codigos)
+        base["es_pt"] = bool(_RE_PT.search(texto))
         if cuenta_norm == "41353808":
             # Cremas: la esencia es ~15-20% del contenido, no la mezcla full.
             base["gramos_esencia_total"] = gramos_esencia_crema(tamano_ml)
