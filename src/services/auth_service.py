@@ -35,6 +35,60 @@ _SESSION_FILE = Path(__file__).resolve().parents[2] / ".rey_session.json"
 _SESSION_TTL_SECONDS = 12 * 60 * 60  # 12 horas
 
 
+def _sincronizar_usuarios_desde_supabase():
+    """
+    Trae los usuarios de Supabase y los mantiene en la tabla local.
+    Así, usuarios creados/modificados en Supabase son visibles inmediatamente.
+    """
+    try:
+        resp = supabase.table("usuarios").select("*").execute()
+        if not resp or not getattr(resp, "data", None):
+            return
+        for u in resp.data:
+            if not u.get("id") or not u.get("email"):
+                continue
+            existing = run_query(
+                "SELECT id FROM usuarios WHERE LOWER(email) = LOWER(%s)",
+                (u["email"],),
+                fetch_one=True,
+            )
+            if existing:
+                run_query(
+                    """
+                    UPDATE usuarios
+                    SET name = %s, rol = %s, password_hash = %s
+                    WHERE LOWER(email) = LOWER(%s)
+                    """,
+                    (
+                        u.get("name") or u["email"],
+                        u.get("rol") or "vendedor",
+                        u.get("password_hash"),
+                        u["email"],
+                    ),
+                )
+            else:
+                run_query(
+                    """
+                    INSERT INTO usuarios (id, name, email, rol, password_hash)
+                    VALUES (%s, %s, %s, %s, %s)
+                    ON CONFLICT (id) DO UPDATE
+                    SET name = EXCLUDED.name,
+                        email = EXCLUDED.email,
+                        rol = EXCLUDED.rol,
+                        password_hash = EXCLUDED.password_hash
+                    """,
+                    (
+                        u["id"],
+                        u.get("name") or u["email"],
+                        u.get("email"),
+                        u.get("rol") or "vendedor",
+                        u.get("password_hash"),
+                    ),
+                )
+    except Exception as e:
+        print(f"No se pudieron sincronizar usuarios: {e}")
+
+
 def _localizar_por_email(email: str):
     """Busca o crea un usuario local a partir del email de Supabase."""
     row = run_query(
@@ -65,6 +119,9 @@ class AuthService:
 
         if not password_typed or not str(password_typed).strip():
             return {"success": False, "message": "Ingrese la contraseña"}
+
+        # Traer usuarios creados/modificados en Supabase
+        _sincronizar_usuarios_desde_supabase()
 
         # El usuario puede escribir email o nombre local. Si no tiene '@',
         # buscamos el email asociado en la tabla local.
@@ -217,6 +274,9 @@ class AuthService:
             dict | None: {'id', 'rol', 'name'} si hay sesión válida; None si no.
         """
         global _current_usuario_id, _current_usuario_rol, _current_usuario_name
+
+        # Actualizar usuarios locales desde Supabase
+        _sincronizar_usuarios_desde_supabase()
 
         # 1) Intentar validar sesión activa en Supabase
         try:
