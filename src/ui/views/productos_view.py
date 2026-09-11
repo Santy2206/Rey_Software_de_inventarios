@@ -162,13 +162,6 @@ class _ProductosView(ft.Container):
                 spacing=12,
                 controls=[
                     self._import_bodega,
-                    ft.Text(
-                        "Si la bodega es 'Fragancias Bodega', cada producto "
-                        "se replica automáticamente en 'Venta Fragancias' y "
-                        "'Fragancias Terminado' (mismo código, stock 0).",
-                        size=11,
-                        color="grey",
-                    ),
                     ft.Row(
                         spacing=8,
                         controls=[
@@ -660,8 +653,7 @@ class _ProductosView(ft.Container):
         for b in self._bodegas:
             if b.get("id") == bodega_id:
                 nombre = (b.get("nombre") or "").lower()
-                # "fraganc" cubre 'Fragancias' y la variante 'Fragancinas'
-                return "fraganc" in nombre
+                return "fragancia" in nombre
         return False
 
     def _on_bodega_seleccionada(self, e=None):
@@ -889,11 +881,7 @@ class _ProductosView(ft.Container):
         self._mostrar_snack(f"{mensaje}: {ruta}", error=False)
 
     def _abrir_dialogo_importar(self, e=None):
-        # Si hay un filtro de bodega activo, preseleccionarla como destino.
-        if self._bodega_filtro and self._bodega_filtro != "todas":
-            self._import_bodega.value = self._bodega_filtro
-        else:
-            self._import_bodega.value = None
+        self._import_bodega.value = None
         self._import_ruta.value = ""
         self._dialog_importar.open = True
         self.page.update()

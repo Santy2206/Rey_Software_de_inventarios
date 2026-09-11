@@ -244,8 +244,6 @@ class VentasResolucionService:
               AND p.nombre ~* %s
             ORDER BY
               CASE WHEN b.nombre ILIKE '%%envase%%' THEN 0 ELSE 1 END,
-              CASE WHEN UPPER(p.nombre) LIKE '%%ROSCA%%' THEN 0 ELSE 1 END,
-              CASE WHEN UPPER(p.nombre) LIKE '%%PLASTICO%%' THEN 0 ELSE 1 END,
               LENGTH(p.nombre), p.nombre
             LIMIT 5
             """,
@@ -256,104 +254,7 @@ class VentasResolucionService:
                 "id": str(rows[0]["id"]),
                 "nombre": rows[0]["nombre"],
             }
-        # Varios candidatos del mismo tamaño: preferir válvula ROSCA y
-        # luego material PLASTICO (ya vienen en ese orden).
-        if rows and len(rows) > 1:
-            top = (rows[0].get("nombre") or "").upper()
-            if "ROSCA" in top or "PLASTICO" in top:
-                return {"id": str(rows[0]["id"]), "nombre": rows[0]["nombre"]}
         return None
-
-    @staticmethod
-    def _match_tokens_bodega(fila: dict, clave: str | None) -> dict:
-        """
-        Fallback: busca en la bodega sugerida por la cuenta un producto
-        cuyo nombre contenga TODOS los tokens significativos de la clave
-        (y el tamaño en ml si viene). Match único → resuelve; varios →
-        devuelve candidatos; cero → nada.
-        """
-        import re as _re
-        from src.services.elisa_concepto_parser import BODEGA_POR_CUENTA
-
-        attrs = _as_dict(fila.get("atributos"))
-        cuenta = _re.sub(r"\D", "", str(attrs.get("cuenta") or fila.get("cuenta") or ""))
-        nombre_bod = BODEGA_POR_CUENTA.get(cuenta)
-        if not nombre_bod or not clave:
-            return {}
-
-        bod = run_query(
-            "SELECT id FROM bodegas WHERE UPPER(nombre) = UPPER(%s) LIMIT 1",
-            (nombre_bod,),
-            fetch_one=True,
-        )
-        if not bod:
-            return {}
-        bid = str(bod["id"])
-
-        # Tokens significativos: palabras >=3 letras, sin unidades/cantidades
-        texto = _re.sub(r"\d+(?:[.,]\d+)?\s*(ML|GR?|OZ|L|LT|UND|UNID|UNIDAD|UNIDADES)\b",
-                        " ", clave.upper())
-        tokens = [
-            t for t in _re.findall(r"[A-ZÁÉÍÓÚÑ]{3,}", texto)
-            if t not in ("UND", "UNID", "PARA", "CON", "LOS", "LAS")
-        ]
-        # Singularizar plurales simples: "CILINDRICOS" → "CILINDRICO"
-        tokens = [
-            t[:-1] if t.endswith("S") and len(t) > 4 else t
-            for t in tokens
-        ]
-        if not tokens:
-            return {}
-
-        # Tamaño en ml de la clave, si existe
-        m_ml = _re.search(r"(\d+)\s*ML", clave.upper())
-        tam = m_ml.group(1) if m_ml else None
-
-        conds = " AND ".join("UPPER(p.nombre) LIKE %s" for _ in tokens)
-        params = [f"%{t}%" for t in tokens]
-        sql = f"""
-            SELECT p.id, p.nombre, p.codigo, p.bodega_id, b.nombre AS bodega_nombre
-            FROM productos p
-            JOIN bodegas b ON b.id = p.bodega_id
-            WHERE p.bodega_id = %s::uuid AND {conds}
-        """
-        rows = run_query(sql + " ORDER BY LENGTH(p.nombre), p.nombre", (bid, *params))
-
-        if tam:
-            con_tam = [
-                r for r in rows
-                if _re.search(rf"\b{tam}\s*ML\b", (r.get("nombre") or "").upper())
-            ]
-            if con_tam:
-                rows = con_tam
-
-        if not rows:
-            return {}
-
-        cands = [
-            {
-                "id": str(r["id"]),
-                "nombre": r["nombre"],
-                "codigo": r.get("codigo"),
-                "bodega_id": str(r["bodega_id"]),
-                "bodega_nombre": r.get("bodega_nombre"),
-                "score": 0.9,
-                "motivo": "tokens_bodega",
-            }
-            for r in rows[:MAX_CANDIDATOS]
-        ]
-        if len(rows) == 1:
-            return {"match": cands[0]["id"], "candidatos": cands}
-        # Varios candidatos: preferir ROSCA; si no, PLASTICO único.
-        rosca = [c for c in cands if "ROSCA" in (c["nombre"] or "").upper()]
-        if len(rosca) == 1:
-            return {"match": rosca[0]["id"], "candidatos": cands}
-        plastico = [
-            c for c in cands if "PLASTICO" in (c["nombre"] or "").upper()
-        ]
-        if len(plastico) == 1:
-            return {"match": plastico[0]["id"], "candidatos": cands}
-        return {"match": None, "candidatos": cands}
 
     @staticmethod
     def _resolver_fila(fila: dict, umbral: float) -> dict:
@@ -525,23 +426,7 @@ class VentasResolucionService:
                 "clave_busqueda": clave,
             }
 
-        # 0 o varios exactos / solo fuzzy → fallback por tokens en la
-        # bodega sugerida por la cuenta (ej. "ALCOHOL 250ML" → bodega
-        # Alcohol, "ALCOHOL DESODORIZADO 250 ML (200 GR)").
-        tok = VentasResolucionService._match_tokens_bodega(fila, clave)
-        if tok.get("match"):
-            return {
-                "estado_resolucion": "vinculado",
-                "producto_id": tok["match"],
-                "productos_vinculados": None,
-                "candidatos": None,
-                "clave_busqueda": clave,
-            }
-        if tok.get("candidatos"):
-            for c in tok["candidatos"]:
-                if c["id"] not in {x["id"] for x in cands}:
-                    cands.append(c)
-
+        # 0 o varios exactos / solo fuzzy → pendiente con sugerencias
         return {
             "estado_resolucion": "pendiente",
             "producto_id": None,
