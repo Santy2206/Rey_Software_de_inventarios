@@ -1,19 +1,42 @@
 import flet as ft
 
 
+_MENU_ITEMS = [
+    (ft.Icons.DASHBOARD, "Dashboard", "dashboard"),
+    (ft.Icons.WAREHOUSE, "Bodegas", "BODEGAS"),
+    (ft.Icons.INVENTORY_2, "Productos", "PRODUCTOS"),
+    (ft.Icons.SHOPPING_CART, "Ventas", "VENTAS"),
+    (ft.Icons.FACT_CHECK, "Revisión ventas", "REVISION_VENTAS"),
+    (ft.Icons.SWAP_HORIZ, "Movimientos", "MOVIMIENTOS"),
+    (ft.Icons.PEOPLE, "Clientes", "CLIENTES"),
+    (ft.Icons.BAR_CHART, "Reportes", "REPORTES"),
+    (ft.Icons.DESCRIPTION, "Bitácora", "BITACORA"),
+    (ft.Icons.MANAGE_ACCOUNTS, "Usuarios", "USUARIOS"),
+]
+
+_ADMIN_ONLY = {
+    "BODEGAS", "PRODUCTOS", "REPORTES", "BITACORA", "USUARIOS", "MOVIMIENTOS",
+}
+
+
 class Sidebar(ft.Container):
     """
     Sidebar de navegación con resaltado del panel activo.
 
     Uso:
-        sidebar = Sidebar(on_navigate=load_content, on_logout=handle_logout)
+        sidebar = Sidebar(
+            on_navigate=load_content,
+            on_logout=handle_logout,
+            rol="administrador",
+        )
         sidebar.set_active("dashboard")
     """
 
-    def __init__(self, on_navigate, on_logout, active="dashboard"):
+    def __init__(self, on_navigate, on_logout, rol: str, active="dashboard"):
         super().__init__()
         self._on_navigate = on_navigate
         self._on_logout = on_logout
+        self._rol = (rol or "").lower()
         self._items: dict[str, ft.Container] = {}
 
         menu_controls = [
@@ -25,16 +48,14 @@ class Sidebar(ft.Container):
                 ],
             ),
             ft.Divider(color="white24"),
-            self._item(ft.Icons.DASHBOARD, "Dashboard", "dashboard"),
-            self._item(ft.Icons.WAREHOUSE, "Bodegas", "BODEGAS"),
-            self._item(ft.Icons.INVENTORY_2, "Productos", "PRODUCTOS"),
-            self._item(ft.Icons.SHOPPING_CART, "Ventas", "VENTAS"),
-            self._item(ft.Icons.FACT_CHECK, "Revisión ventas", "REVISION_VENTAS"),
-            self._item(ft.Icons.SWAP_HORIZ, "Movimientos", "MOVIMIENTOS"),
-            self._item(ft.Icons.PEOPLE, "Clientes", "CLIENTES"),
-            self._item(ft.Icons.BAR_CHART, "Reportes", "REPORTES"),
-            self._item(ft.Icons.DESCRIPTION, "Bitácora", "BITACORA"),
-            self._item(ft.Icons.MANAGE_ACCOUNTS, "Usuarios", "USUARIOS"),
+        ]
+
+        for icon, text, page_name in _MENU_ITEMS:
+            if page_name in _ADMIN_ONLY and self._rol != "administrador":
+                continue
+            menu_controls.append(self._item(icon, text, page_name))
+
+        menu_controls.extend([
             ft.Container(expand=True),
             ft.ElevatedButton(
                 "Cerrar sesión",
@@ -44,7 +65,7 @@ class Sidebar(ft.Container):
                 color="white",
                 on_click=lambda _: self._on_logout(),
             ),
-        ]
+        ])
 
         self.width = 220
         self.bgcolor = "#b3001b"

@@ -18,6 +18,7 @@ Reglas:
     - Todos los errores se capturan internamente y se retornan diccionarios.
 """
 
+import hashlib
 import json
 import time
 from pathlib import Path
@@ -35,6 +36,18 @@ _SESSION_FILE = Path(__file__).resolve().parents[2] / ".rey_session.json"
 _SESSION_TTL_SECONDS = 12 * 60 * 60  # 12 horas
 
 
+def _verificar_password(plain: str, hashed: str) -> bool:
+    """Verifica contraseña contra hash SHA-256 o texto plano (legacy)."""
+    if not plain:
+        return False
+    if not hashed:
+        return False
+    if plain == hashed:
+        return True
+    sha = hashlib.sha256(plain.encode("utf-8")).hexdigest()
+    return sha == hashed
+
+
 def _sincronizar_usuarios_desde_supabase():
     """
     Trae los usuarios de Supabase y los mantiene en la tabla local.
@@ -47,12 +60,13 @@ def _sincronizar_usuarios_desde_supabase():
         for u in resp.data:
             if not u.get("id") or not u.get("email"):
                 continue
-            existing = run_query(
+            # Actualizar por email si ya existe
+            existing_email = run_query(
                 "SELECT id FROM usuarios WHERE LOWER(email) = LOWER(%s)",
                 (u["email"],),
                 fetch_one=True,
             )
-            if existing:
+            if existing_email:
                 run_query(
                     """
                     UPDATE usuarios
@@ -66,25 +80,50 @@ def _sincronizar_usuarios_desde_supabase():
                         u["email"],
                     ),
                 )
-            else:
+                continue
+
+            # Si el nombre ya existe con otro id, actualizar ese registro
+            # (la tabla impone unique en name).
+            existing_name = run_query(
+                "SELECT id FROM usuarios WHERE name = %s",
+                (u.get("name") or u["email"],),
+                fetch_one=True,
+            )
+            if existing_name:
                 run_query(
                     """
-                    INSERT INTO usuarios (id, name, email, rol, password_hash)
-                    VALUES (%s, %s, %s, %s, %s)
-                    ON CONFLICT (id) DO UPDATE
-                    SET name = EXCLUDED.name,
-                        email = EXCLUDED.email,
-                        rol = EXCLUDED.rol,
-                        password_hash = EXCLUDED.password_hash
+                    UPDATE usuarios
+                    SET email = %s, rol = %s, password_hash = %s
+                    WHERE id = %s
                     """,
                     (
-                        u["id"],
-                        u.get("name") or u["email"],
                         u.get("email"),
                         u.get("rol") or "vendedor",
                         u.get("password_hash"),
+                        existing_name["id"],
                     ),
                 )
+                continue
+
+            # Nuevo usuario: insertar con el id de Supabase
+            run_query(
+                """
+                INSERT INTO usuarios (id, name, email, rol, password_hash)
+                VALUES (%s, %s, %s, %s, %s)
+                ON CONFLICT (id) DO UPDATE
+                SET name = EXCLUDED.name,
+                    email = EXCLUDED.email,
+                    rol = EXCLUDED.rol,
+                    password_hash = EXCLUDED.password_hash
+                """,
+                (
+                    u["id"],
+                    u.get("name") or u["email"],
+                    u.get("email"),
+                    u.get("rol") or "vendedor",
+                    u.get("password_hash"),
+                ),
+            )
     except Exception as e:
         print(f"No se pudieron sincronizar usuarios: {e}")
 
@@ -175,6 +214,34 @@ class AuthService:
 
         except Exception as e:
             error_msg = str(e)
+
+            # Fallback legacy: probar credenciales contra la tabla local
+            # (útil durante migración o si el usuario aún no está en Supabase Auth).
+            local = run_query(
+                "SELECT id, name, email, rol, password_hash FROM usuarios "
+                "WHERE LOWER(email) = LOWER(%s) OR name = %s",
+                (email, username_typed),
+                fetch_one=True,
+            )
+            if local and _verificar_password(str(password_typed), local["password_hash"]):
+                _current_usuario_id = local["id"]
+                _current_usuario_rol = local["rol"]
+                _current_usuario_name = local["name"]
+                AuthService._guardar_sesion(
+                    user_id=local["id"],
+                    rol=local["rol"],
+                    name=local["name"],
+                    email=local.get("email") or email,
+                )
+                return {
+                    "success": True,
+                    "message": f"Bienvenido {local['name']}",
+                    "id": local["id"],
+                    "rol": local["rol"],
+                    "name": local["name"],
+                }
+
+            # Solo reportar el error si el fallback también falló
             print(f"Error en AuthService: {error_msg}")
             if "Invalid login" in error_msg or "invalid" in error_msg.lower():
                 return {"success": False, "message": "Correo o contraseña incorrectos"}
@@ -236,6 +303,16 @@ class AuthService:
             return {"success": True, "message": "Contraseña verificada"}
         except Exception as e:
             print(f"Error en AuthService.verificar_password_sesion: {e}")
+            # Fallback legacy
+            usuario_id = AuthService.get_usuario_id()
+            if usuario_id:
+                row = run_query(
+                    "SELECT password_hash FROM usuarios WHERE id = %s",
+                    (usuario_id,),
+                    fetch_one=True,
+                )
+                if row and _verificar_password(str(password_typed), row["password_hash"]):
+                    return {"success": True, "message": "Contraseña verificada"}
             return {"success": False, "message": "Contraseña incorrecta"}
 
     @staticmethod
@@ -244,6 +321,11 @@ class AuthService:
         if _current_usuario_rol is None:
             AuthService.restore_session()
         return _current_usuario_rol
+
+    @staticmethod
+    def es_administrador() -> bool:
+        """True si el usuario autenticado tiene rol administrador."""
+        return AuthService.get_rol() == "administrador"
 
     @staticmethod
     def get_name():

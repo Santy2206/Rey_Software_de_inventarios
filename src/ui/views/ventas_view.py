@@ -26,8 +26,10 @@ from decimal import Decimal, ROUND_HALF_UP
 import flet as ft
 
 from src.services.auth_service import AuthService
+from src.services.bodegas_service import BodegasService
 from src.services.clientes_service import ClientesService
 from src.services.productos_service import ProductosService
+from src.services.usuarios_service import UsuariosService
 from src.services.ventas_import_service import VentasImportService
 from src.services.ventas_service import VentasService
 from src.ui.components.status_header import StatusHeader
@@ -58,6 +60,8 @@ class _VentasView(ft.Container):
         self._productos: list[dict] = []
         self._ventas: list[dict] = []
         self._carrito: list[dict] = []
+        self._bodegas: list[dict] = []
+        self._usuarios: list[dict] = []
 
         self._campo_cliente = ft.Dropdown(
             label="Cliente *",
@@ -121,12 +125,43 @@ class _VentasView(ft.Container):
             weight=ft.FontWeight.BOLD,
         )
         self._buscar = ft.TextField(
-            expand=True,
-            hint_text="Buscar por cliente...",
+            expand=2,
+            hint_text="Buscar cliente...",
             prefix_icon=ft.Icons.SEARCH,
             on_change=self._aplicar_filtros,
         )
+        self._filtro_fecha_inicio = ft.TextField(
+            label="Fecha inicio",
+            hint_text="AAAA-MM-DD",
+            expand=1,
+            on_change=self._aplicar_filtros,
+        )
+        self._filtro_fecha_fin = ft.TextField(
+            label="Fecha fin",
+            hint_text="AAAA-MM-DD",
+            expand=1,
+            on_change=self._aplicar_filtros,
+        )
+        self._filtro_bodega = ft.Dropdown(
+            label="Bodega",
+            expand=1,
+            options=[ft.DropdownOption(key="", text="Todas")],
+            value="",
+            on_change=self._aplicar_filtros,
+        )
+        self._filtro_usuario = ft.Dropdown(
+            label="Vendedor",
+            expand=1,
+            options=[ft.DropdownOption(key="", text="Todos")],
+            value="",
+            on_change=self._aplicar_filtros,
+        )
 
+        self._campo_cedula_cliente = ft.TextField(
+            label="Cédula *",
+            hint_text="Ej: 12345678",
+            border_radius=10,
+        )
         self._campo_nombre_cliente = ft.TextField(
             label="Nombre *",
             hint_text="Ej: Juan Pérez",
@@ -149,6 +184,7 @@ class _VentasView(ft.Container):
                 tight=True,
                 spacing=12,
                 controls=[
+                    self._campo_cedula_cliente,
                     self._campo_nombre_cliente,
                     self._campo_telefono_cliente,
                     self._campo_email_cliente,
@@ -229,6 +265,33 @@ class _VentasView(ft.Container):
             ],
             actions_alignment=ft.MainAxisAlignment.END,
         )
+        self._tabla_detalle = ft.DataTable(
+            columns=[
+                ft.DataColumn(ft.Text("Producto")),
+                ft.DataColumn(ft.Text("Cantidad")),
+                ft.DataColumn(ft.Text("Precio unitario")),
+                ft.DataColumn(ft.Text("Subtotal")),
+            ],
+            rows=[],
+            expand=True,
+        )
+        self._lbl_detalle_header = ft.Text("", size=14, color="grey")
+        self._dialog_detalle = ft.AlertDialog(
+            modal=True,
+            title=ft.Text("Detalle de venta"),
+            content=ft.Column(
+                tight=True,
+                spacing=12,
+                controls=[
+                    self._lbl_detalle_header,
+                    self._tabla_detalle,
+                ],
+            ),
+            actions=[
+                ft.TextButton("Cerrar", on_click=self._cerrar_dialogo_detalle),
+            ],
+            actions_alignment=ft.MainAxisAlignment.END,
+        )
         self._snackbar = ft.SnackBar(content=ft.Text(""), show_close_icon=True)
 
         self._status_header = StatusHeader()
@@ -249,6 +312,7 @@ class _VentasView(ft.Container):
         self.page.overlay.append(self._dialog_cliente)
         self.page.overlay.append(self._dialog_anular)
         self.page.overlay.append(self._dialog_importar)
+        self.page.overlay.append(self._dialog_detalle)
         self.page.overlay.append(self._snackbar)
         self.page.update()
         self._status_header.load(self.page)
@@ -263,11 +327,31 @@ class _VentasView(ft.Container):
         self._productos = res_productos["data"] if res_productos.get("success") else []
         self._refrescar_dropdown_productos()
 
+        res_bodegas = BodegasService.get_all()
+        self._bodegas = res_bodegas["data"] if res_bodegas.get("success") else []
+        self._refrescar_filtro_bodegas()
+
+        res_usuarios = UsuariosService.get_all()
+        self._usuarios = res_usuarios["data"] if res_usuarios.get("success") else []
+        self._refrescar_filtro_usuarios()
+
         self._cargar_historial()
         self.page.update()
 
     def _cargar_historial(self):
-        resultado = VentasService.get_all()
+        inicio = (self._filtro_fecha_inicio.value or "").strip() or None
+        fin = (self._filtro_fecha_fin.value or "").strip() or None
+        bodega = (self._filtro_bodega.value or "").strip() or None
+        usuario = (self._filtro_usuario.value or "").strip() or None
+        cliente = (self._buscar.value or "").strip() or None
+
+        resultado = VentasService.get_all(
+            cliente=cliente,
+            fecha_inicio=inicio,
+            fecha_fin=fin,
+            bodega_id=bodega,
+            usuario_id=usuario,
+        )
         self._ventas = resultado["data"] if resultado.get("success") else []
         self._refrescar_tabla()
 
@@ -287,6 +371,26 @@ class _VentasView(ft.Container):
             )
             for p in self._productos
         ]
+
+    def _refrescar_filtro_bodegas(self):
+        opciones = [ft.DropdownOption(key="", text="Todas")]
+        opciones.extend(
+            [
+                ft.DropdownOption(key=str(b["id"]), text=b.get("nombre", "—"))
+                for b in self._bodegas
+            ]
+        )
+        self._filtro_bodega.options = opciones
+
+    def _refrescar_filtro_usuarios(self):
+        opciones = [ft.DropdownOption(key="", text="Todos")]
+        opciones.extend(
+            [
+                ft.DropdownOption(key=str(u["id"]), text=u.get("name", "—"))
+                for u in self._usuarios
+            ]
+        )
+        self._filtro_usuario.options = opciones
 
     def _header(self):
         return PageHeader(
@@ -440,7 +544,19 @@ class _VentasView(ft.Container):
                             ),
                         ],
                     ),
-                    self._buscar,
+                    ft.Row(
+                        wrap=True,
+                        spacing=10,
+                        run_spacing=10,
+                        alignment=ft.MainAxisAlignment.START,
+                        controls=[
+                            self._buscar,
+                            self._filtro_fecha_inicio,
+                            self._filtro_fecha_fin,
+                            self._filtro_bodega,
+                            self._filtro_usuario,
+                        ],
+                    ),
                     ft.Divider(),
                     self._tabla,
                 ],
@@ -598,6 +714,7 @@ class _VentasView(ft.Container):
             self.page.update()
 
     def _abrir_dialogo_cliente(self, e=None):
+        self._campo_cedula_cliente.value = ""
         self._campo_nombre_cliente.value = ""
         self._campo_telefono_cliente.value = ""
         self._campo_email_cliente.value = ""
@@ -609,7 +726,11 @@ class _VentasView(ft.Container):
         self.page.update()
 
     def _guardar_cliente(self, e=None):
+        cedula = (self._campo_cedula_cliente.value or "").strip()
         nombre = (self._campo_nombre_cliente.value or "").strip()
+        if not cedula:
+            self._mostrar_snack("⚠️ La cédula del cliente es obligatoria.", error=True)
+            return
         if not nombre:
             self._mostrar_snack("⚠️ El nombre del cliente es obligatorio.", error=True)
             return
@@ -620,7 +741,7 @@ class _VentasView(ft.Container):
 
         def _worker():
             result = ClientesService.create(
-                nombre=nombre, telefono=telefono, email=email
+                cedula=cedula, nombre=nombre, telefono=telefono, email=email
             )
             self._mostrar_snack(result["message"], error=not result["success"])
             if result["success"]:
@@ -671,12 +792,27 @@ class _VentasView(ft.Container):
                     )
                 ),
                 ft.DataCell(
-                    ft.IconButton(
-                        icon=ft.Icons.CANCEL,
-                        icon_color="#B91C1C",
-                        tooltip="Anular venta",
-                        disabled=anulada,
-                        on_click=lambda e, v=venta: self._abrir_dialogo_anular(v),
+                    ft.Row(
+                        spacing=0,
+                        controls=[
+                            ft.IconButton(
+                                icon=ft.Icons.VISIBILITY,
+                                icon_color="#4338CA",
+                                tooltip="Ver detalle",
+                                on_click=lambda e, v=venta: self._abrir_dialogo_detalle(
+                                    v
+                                ),
+                            ),
+                            ft.IconButton(
+                                icon=ft.Icons.CANCEL,
+                                icon_color="#B91C1C",
+                                tooltip="Anular venta",
+                                disabled=anulada,
+                                on_click=lambda e, v=venta: self._abrir_dialogo_anular(
+                                    v
+                                ),
+                            ),
+                        ],
                     )
                 ),
             ]
@@ -691,6 +827,54 @@ class _VentasView(ft.Container):
         self._venta_a_anular = None
         self._dialog_anular.open = False
         self.page.update()
+
+    def _abrir_dialogo_detalle(self, venta: dict):
+        def _worker():
+            result = VentasService.get_by_id(str(venta["id"]))
+            if not result.get("success"):
+                self._mostrar_snack(result["message"], error=True)
+                return
+            data = result["data"]
+            fecha = data.get("fecha")
+            fecha_str = (
+                fecha.strftime("%d/%m/%Y %H:%M")
+                if hasattr(fecha, "strftime")
+                else str(fecha or "—")
+            )
+            header = (
+                f"{fecha_str} · Cliente: {data.get('cliente_nombre') or '—'} "
+                f"· Total: {_fmt_money(data.get('total'))} "
+                f"· Vendedor: {data.get('usuario_nombre') or '—'}"
+            )
+            self._lbl_detalle_header.value = header
+
+            self._tabla_detalle.rows = [
+                ft.DataRow(
+                    cells=[
+                        ft.DataCell(ft.Text(linea.get("producto_nombre") or "—")),
+                        ft.DataCell(
+                            ft.Text(str(linea.get("cantidad") or 0))
+                        ),
+                        ft.DataCell(
+                            ft.Text(_fmt_money(linea.get("precio_unitario")))
+                        ),
+                        ft.DataCell(
+                            ft.Text(_fmt_money(linea.get("subtotal")))
+                        ),
+                    ]
+                )
+                for linea in data.get("lineas", [])
+            ]
+            self._dialog_detalle.open = True
+            if self.page:
+                self.page.update()
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+    def _cerrar_dialogo_detalle(self, e=None):
+        self._dialog_detalle.open = False
+        if self.page:
+            self.page.update()
 
     def _confirmar_anulacion(self, e=None):
         venta = self._venta_a_anular
@@ -714,11 +898,12 @@ class _VentasView(ft.Container):
 
 
     def _aplicar_filtros(self, e=None):
-        texto = (self._buscar.value or "").lower()
-        for fila in self._tabla.rows:
-            cliente = (fila.cells[1].content.value or "").lower()
-            fila.visible = texto in cliente
-        self.update()
+        def _worker():
+            self._cargar_historial()
+            if self.page:
+                self.page.update()
+
+        threading.Thread(target=_worker, daemon=True).start()
 
     def _mostrar_snack(self, mensaje: str, error: bool = False):
         self._snackbar.content = ft.Text(mensaje, color="white")

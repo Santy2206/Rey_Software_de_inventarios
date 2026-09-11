@@ -91,6 +91,9 @@ class BitacoraService:
         Retorna:
             dict: contrato estándar; 'data' es la lista de registros.
         """
+        from src.services.auth_service import AuthService
+        if not AuthService.es_administrador():
+            return {"success": False, "message": "No tiene permisos para ver la bitácora"}
         print("--- Trayendo bitácora ---")
         try:
             condiciones = []
@@ -172,6 +175,9 @@ class BitacoraService:
         Retorna:
             dict: contrato estándar; 'data' es la lista de registros.
         """
+        from src.services.auth_service import AuthService
+        if not AuthService.es_administrador():
+            return {"success": False, "message": "No tiene permisos para ver la bitácora"}
         print(f"--- Trayendo bitácora de {entidad} {entidad_id} ---")
         try:
             data = run_query(

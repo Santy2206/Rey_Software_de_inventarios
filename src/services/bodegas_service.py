@@ -116,6 +116,8 @@ class BodegasService:
                     bodegas_view.py, que ya te llama con tipo=tipo)
         """
         print(f"--- Creando bodega: {nombre} ({tipo}) ---")
+        if not AuthService.es_administrador():
+            return {"success": False, "message": "No tiene permisos para crear bodegas"}
         try:
             # Tipo Fragancias → siempre es bodega principal
             if (tipo or "").strip().upper() == "FRAGANCIAS":
@@ -173,6 +175,8 @@ class BodegasService:
             tipo:      nuevo tipo
         """
         print(f"--- Actualizando bodega id: {bodega_id} ---")
+        if not AuthService.es_administrador():
+            return {"success": False, "message": "No tiene permisos para editar bodegas"}
         try:
             # Tipo Fragancias → siempre es bodega principal
             if (tipo or "").strip().upper() == "FRAGANCIAS":
@@ -234,6 +238,8 @@ class BodegasService:
             dict: {success, message, data: {"bodega": ..., "productos_copiados": n}}
         """
         print(f"--- Duplicando bodega id: {bodega_id} ---")
+        if not AuthService.es_administrador():
+            return {"success": False, "message": "No tiene permisos para duplicar bodegas"}
         try:
             from src.core.local_db import get_cursor
 
@@ -315,6 +321,8 @@ class BodegasService:
             bodega_id: el id de la bodega a eliminar
         """
         print(f"--- Eliminando bodega id: {bodega_id} ---")
+        if not AuthService.es_administrador():
+            return {"success": False, "message": "No tiene permisos para eliminar bodegas"}
         try:
             # Verificar si hay productos asociados
             productos = run_query(

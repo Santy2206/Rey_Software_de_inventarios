@@ -11,6 +11,7 @@ Reglas:
     - SIN llamadas a base de datos.
 """
 
+from collections import defaultdict
 from decimal import Decimal
 
 
@@ -69,23 +70,52 @@ def parse_ventas_realizadas(ventas: list[dict]) -> list[dict]:
 
 
 def parse_ventas_resumen(ventas: list[dict]) -> list[dict]:
-    """Reporte Ventas: resumen agregado por cliente."""
+    """
+    Reporte Ventas: resumen agregado por cliente con desglose de productos.
+
+    El Total se calcula a partir de los subtotales de las líneas de cada
+    venta (columna `subtotal` de `venta_detalle`), no de `ventas.total`,
+    que puede estar en 0.00.
+    """
     resumen: dict[str, dict] = {}
+    # productos por cliente: {cliente: {producto: Decimal(total_qty)}}
+    productos_por_cliente: dict[str, dict[str, Decimal]] = defaultdict(
+        lambda: defaultdict(lambda: Decimal("0"))
+    )
+    # ventas distintas por cliente
+    ventas_por_cliente: dict[str, set] = defaultdict(set)
+
     for v in ventas or []:
         cliente = v.get("cliente_nombre") or "—"
+        producto = v.get("producto_nombre") or "—"
+        venta_id = str(v.get("venta_id") or "")
+        cantidad = Decimal(str(v.get("cantidad") or 0))
+        subtotal = Decimal(str(v.get("subtotal") or 0))
+
         if cliente not in resumen:
             resumen[cliente] = {
                 "Cliente": cliente,
+                "Productos": "",
                 "Cantidad de Ventas": 0,
-                "Unidades Vendidas": 0,
-                "Total": 0.0,
+                "Unidades Vendidas": Decimal("0"),
+                "Total": Decimal("0"),
             }
-        resumen[cliente]["Cantidad de Ventas"] += 1
-        resumen[cliente]["Unidades Vendidas"] += int(v.get("unidades") or 0)
-        resumen[cliente]["Total"] += _money(v.get("total"))
 
-    for r in resumen.values():
-        r["Total"] = round(r["Total"], 2)
+        resumen[cliente]["Unidades Vendidas"] += cantidad
+        resumen[cliente]["Total"] += subtotal
+        productos_por_cliente[cliente][producto] += cantidad
+        if venta_id:
+            ventas_por_cliente[cliente].add(venta_id)
+
+    for cliente, r in resumen.items():
+        # Formato: "Producto x5; Producto2 x2"
+        items = sorted(productos_por_cliente[cliente].items())
+        r["Productos"] = "; ".join(
+            f"{prod} x{int(qty)}" for prod, qty in items
+        )
+        r["Cantidad de Ventas"] = len(ventas_por_cliente.get(cliente, set()))
+        r["Unidades Vendidas"] = int(r["Unidades Vendidas"])
+        r["Total"] = _money(r["Total"])
 
     return sorted(resumen.values(), key=lambda x: x["Total"], reverse=True)
 

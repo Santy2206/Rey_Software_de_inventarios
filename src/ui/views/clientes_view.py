@@ -99,8 +99,13 @@ class _ClientesView(ft.Container):
         )
 
         # Campos del formulario
+        self._campo_cedula = ft.TextField(
+            label="Cédula *",
+            hint_text="Ej: 12345678",
+            border_radius=10,
+        )
         self._campo_nombre = ft.TextField(
-            label="Nombre *",
+            label="Nombre completo *",
             hint_text='Ej: "Juan Pérez"',
             border_radius=10,
         )
@@ -123,6 +128,7 @@ class _ClientesView(ft.Container):
                 tight=True,
                 spacing=12,
                 controls=[
+                    self._campo_cedula,
                     self._campo_nombre,
                     self._campo_telefono,
                     self._campo_email,
@@ -323,6 +329,7 @@ class _ClientesView(ft.Container):
 
     def _abrir_dialogo_crear(self, e=None):
         self._cliente_editando = None
+        self._campo_cedula.value = ""
         self._campo_nombre.value = ""
         self._campo_telefono.value = ""
         self._campo_email.value = ""
@@ -332,6 +339,7 @@ class _ClientesView(ft.Container):
 
     def _abrir_dialogo_editar(self, cliente: dict):
         self._cliente_editando = cliente
+        self._campo_cedula.value = cliente.get("cedula", "")
         self._campo_nombre.value = cliente.get("nombre", "")
         self._campo_telefono.value = cliente.get("telefono", "")
         self._campo_email.value = cliente.get("email", "")
@@ -348,10 +356,15 @@ class _ClientesView(ft.Container):
     # ─────────────────────────────────────────────────────────────────────────
 
     def _guardar_cliente(self, e):
+        cedula = (self._campo_cedula.value or "").strip()
         nombre = (self._campo_nombre.value or "").strip()
         telefono = (self._campo_telefono.value or "").strip()
         email = (self._campo_email.value or "").strip()
 
+        if not cedula:
+            self._mostrar_snack("⚠️ La cédula es obligatoria.", error=True)
+            self.page.update()
+            return
         if not nombre:
             self._mostrar_snack("⚠️ El nombre es obligatorio.", error=True)
             self.page.update()
@@ -362,11 +375,12 @@ class _ClientesView(ft.Container):
         def _worker():
             if self._cliente_editando is None:
                 result = ClientesService.create(
-                    nombre=nombre, telefono=telefono, email=email
+                    cedula=cedula, nombre=nombre, telefono=telefono, email=email
                 )
             else:
                 result = ClientesService.update(
                     cliente_id=self._cliente_editando["id"],
+                    cedula=cedula,
                     nombre=nombre,
                     telefono=telefono,
                     email=email,

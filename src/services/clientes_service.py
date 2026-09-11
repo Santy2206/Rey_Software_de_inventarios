@@ -2,7 +2,7 @@
 Servicio de Clientes — base de datos local.
 
 Tabla:
-    clientes (id, nombre, telefono, email, creado_en)
+    clientes (id, cedula, nombre, telefono, email, creado_en)
 
 Mismo contrato que el resto de servicios:
   - Cada función usa try/except
@@ -14,6 +14,23 @@ Mismo contrato que el resto de servicios:
 from src.core.local_db import run_query
 from src.services.auth_service import AuthService
 from src.services.bitacora_service import BitacoraService
+
+
+def _limpiar_cedula(cedula: str) -> str:
+    return (cedula or "").strip().upper()
+
+
+def _cedula_existente(cedula: str, excluir_id: str = None) -> dict | None:
+    """Busca otro cliente con la misma cédula."""
+    if not cedula:
+        return None
+    sql = "SELECT id, nombre FROM clientes WHERE UPPER(TRIM(cedula)) = %s"
+    params = [cedula]
+    if excluir_id:
+        sql += " AND id != %s"
+        params.append(excluir_id)
+    sql += " LIMIT 1"
+    return run_query(sql, tuple(params), fetch_one=True)
 
 
 def _registrar_bitacora_clientes(
@@ -65,12 +82,18 @@ class ClientesService:
             }
 
     @staticmethod
-    def create(nombre: str, telefono: str = None, email: str = None):
+    def create(
+        nombre: str,
+        cedula: str,
+        telefono: str = None,
+        email: str = None,
+    ):
         """
         Crea un cliente nuevo.
 
         Parámetros:
             nombre:   nombre del cliente (obligatorio)
+            cedula:   cédula del cliente (obligatorio, única)
             telefono: teléfono de contacto (opcional)
             email:    correo (opcional)
         """
@@ -80,16 +103,30 @@ class ClientesService:
             if not nombre_limpio:
                 return {"success": False, "message": "El nombre del cliente es obligatorio"}
 
+            cedula_limpia = _limpiar_cedula(cedula)
+            if not cedula_limpia:
+                return {"success": False, "message": "La cédula del cliente es obligatoria"}
+
+            dup = _cedula_existente(cedula_limpia)
+            if dup:
+                return {
+                    "success": False,
+                    "message": (
+                        f"La cédula '{cedula_limpia}' ya está registrada "
+                        f"a nombre de {dup['nombre']}"
+                    ),
+                }
+
             telefono_limpio = (telefono or "").strip() or None
             email_limpio = (email or "").strip() or None
 
             cliente = run_query(
                 """
-                INSERT INTO clientes (nombre, telefono, email)
-                VALUES (%s, %s, %s)
+                INSERT INTO clientes (cedula, nombre, telefono, email)
+                VALUES (%s, %s, %s, %s)
                 RETURNING *
                 """,
-                (nombre_limpio, telefono_limpio, email_limpio),
+                (cedula_limpia, nombre_limpio, telefono_limpio, email_limpio),
                 fetch_one=True,
             )
 
@@ -117,7 +154,7 @@ class ClientesService:
         print(f"--- Buscando cliente con id: {cliente_id} ---")
         try:
             cliente = run_query(
-                "SELECT id, nombre, telefono, email, creado_en "
+                "SELECT id, cedula, nombre, telefono, email, creado_en "
                 "FROM clientes WHERE id = %s",
                 (cliente_id,),
                 fetch_one=True,
@@ -145,6 +182,7 @@ class ClientesService:
     def update(
         cliente_id: str,
         nombre: str,
+        cedula: str,
         telefono: str = None,
         email: str = None,
     ):
@@ -154,6 +192,7 @@ class ClientesService:
         Parámetros:
             cliente_id: id del cliente a actualizar
             nombre:     nuevo nombre
+            cedula:     nueva cédula
             telefono:   nuevo teléfono
             email:      nuevo correo
         """
@@ -163,17 +202,31 @@ class ClientesService:
             if not nombre_limpio:
                 return {"success": False, "message": "El nombre del cliente es obligatorio"}
 
+            cedula_limpia = _limpiar_cedula(cedula)
+            if not cedula_limpia:
+                return {"success": False, "message": "La cédula del cliente es obligatoria"}
+
+            dup = _cedula_existente(cedula_limpia, excluir_id=cliente_id)
+            if dup:
+                return {
+                    "success": False,
+                    "message": (
+                        f"La cédula '{cedula_limpia}' ya está registrada "
+                        f"a nombre de {dup['nombre']}"
+                    ),
+                }
+
             telefono_limpio = (telefono or "").strip() or None
             email_limpio = (email or "").strip() or None
 
             cliente = run_query(
                 """
                 UPDATE clientes
-                SET nombre = %s, telefono = %s, email = %s
+                SET cedula = %s, nombre = %s, telefono = %s, email = %s
                 WHERE id = %s
                 RETURNING *
                 """,
-                (nombre_limpio, telefono_limpio, email_limpio, cliente_id),
+                (cedula_limpia, nombre_limpio, telefono_limpio, email_limpio, cliente_id),
                 fetch_one=True,
             )
 

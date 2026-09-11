@@ -47,14 +47,61 @@ def _as_id(value) -> str | None:
 class VentasService:
 
     @staticmethod
-    def get_all():
+    def get_all(
+        cliente: str | None = None,
+        fecha_inicio: str | None = None,
+        fecha_fin: str | None = None,
+        bodega_id: str | None = None,
+        usuario_id: str | None = None,
+    ):
         """
         Trae el historial de ventas con cliente, usuario y totales de líneas.
+
+        Filtros opcionales:
+          - cliente:      subcadena en nombre de cliente
+          - fecha_inicio: ISO date mínima (YYYY-MM-DD)
+          - fecha_fin:    ISO date máxima (YYYY-MM-DD)
+          - bodega_id:    venta que tenga al menos un producto en esa bodega
+          - usuario_id:   UUID del vendedor
         """
-        print("--- Trayendo todas las ventas ---")
+        print("--- Trayendo ventas con filtros ---")
         try:
-            data = run_query(
-                """
+            condiciones = []
+            params: list = []
+
+            if cliente:
+                condiciones.append(
+                    "LOWER(c.nombre) LIKE %s"
+                )
+                params.append(f"%{cliente.lower()}%")
+
+            if fecha_inicio:
+                condiciones.append("v.fecha::date >= %s")
+                params.append(fecha_inicio)
+
+            if fecha_fin:
+                condiciones.append("v.fecha::date <= %s")
+                params.append(fecha_fin)
+
+            if usuario_id:
+                condiciones.append("v.usuario_id = %s::uuid")
+                params.append(usuario_id)
+
+            if bodega_id:
+                condiciones.append(
+                    """
+                    EXISTS (
+                        SELECT 1 FROM venta_detalle vd
+                        JOIN productos p ON p.id = vd.producto_id
+                        WHERE vd.venta_id = v.id AND p.bodega_id = %s::uuid
+                    )
+                    """
+                )
+                params.append(bodega_id)
+
+            where = "WHERE " + " AND ".join(condiciones) if condiciones else ""
+
+            sql = f"""
                 SELECT v.id,
                        v.cliente_id,
                        v.usuario_id,
@@ -69,10 +116,12 @@ class VentasService:
                 LEFT JOIN clientes c ON v.cliente_id = c.id
                 LEFT JOIN usuarios u ON v.usuario_id = u.id
                 LEFT JOIN venta_detalle d ON d.venta_id = v.id
+                {where}
                 GROUP BY v.id, c.nombre, u.name
                 ORDER BY v.fecha DESC
-                """
-            )
+            """
+
+            data = run_query(sql, tuple(params) if params else None)
 
             if not data:
                 return {"success": False, "message": "No hay ventas registradas"}
@@ -86,6 +135,107 @@ class VentasService:
             return {
                 "success": False,
                 "message": f"Error al obtener ventas: {error_msg}",
+            }
+
+    @staticmethod
+    def get_by_id(venta_id: str):
+        """
+        Trae una venta por id con sus líneas de producto.
+        """
+        print(f"--- Trayendo venta {venta_id} ---")
+        try:
+            venta = run_query(
+                """
+                SELECT v.id,
+                       v.cliente_id,
+                       v.usuario_id,
+                       v.total,
+                       v.fecha,
+                       v.anulada,
+                       c.nombre AS cliente_nombre,
+                       u.name   AS usuario_nombre
+                FROM ventas v
+                LEFT JOIN clientes c ON v.cliente_id = c.id
+                LEFT JOIN usuarios u ON v.usuario_id = u.id
+                WHERE v.id = %s
+                """,
+                (venta_id,),
+                fetch_one=True,
+            )
+            if not venta:
+                return {"success": False, "message": "Venta no encontrada"}
+
+            lineas = run_query(
+                """
+                SELECT d.id,
+                       d.producto_id,
+                       p.nombre AS producto_nombre,
+                       d.cantidad,
+                       d.precio_unitario,
+                       d.subtotal
+                FROM venta_detalle d
+                JOIN productos p ON p.id = d.producto_id
+                WHERE d.venta_id = %s
+                ORDER BY d.id
+                """,
+                (venta_id,),
+            )
+            venta["lineas"] = lineas or []
+
+            return {
+                "success": True,
+                "message": "Venta obtenida",
+                "data": dict(venta),
+            }
+        except Exception as e:
+            error_msg = str(e)
+            print(f" Error en VentasService.get_by_id: {error_msg}")
+            return {
+                "success": False,
+                "message": f"Error al obtener la venta: {error_msg}",
+            }
+
+    @staticmethod
+    def get_ventas_detalle():
+        """
+        Trae cada línea de venta con cliente, producto y subtotal.
+
+        Útil para reportes: el total real de una venta es la suma de
+        los subtotales de sus líneas, no la columna `ventas.total`.
+        """
+        print("--- Trayendo detalle de ventas ---")
+        try:
+            data = run_query(
+                """
+                SELECT
+                    v.id AS venta_id,
+                    v.fecha,
+                    c.nombre AS cliente_nombre,
+                    p.nombre AS producto_nombre,
+                    d.cantidad,
+                    d.precio_unitario,
+                    d.subtotal
+                FROM ventas v
+                LEFT JOIN clientes c ON v.cliente_id = c.id
+                LEFT JOIN venta_detalle d ON d.venta_id = v.id
+                LEFT JOIN productos p ON p.id = d.producto_id
+                WHERE COALESCE(v.anulada, false) = false
+                ORDER BY v.fecha DESC, p.nombre
+                """
+            )
+
+            if not data:
+                return {"success": False, "message": "No hay ventas registradas"}
+
+            print(f" Se encontraron {len(data)} línea(s) de venta")
+            return {"success": True, "message": "Detalle de ventas obtenido", "data": data}
+
+        except Exception as e:
+            error_msg = str(e)
+            print(f" Error en VentasService.get_ventas_detalle: {error_msg}")
+            return {
+                "success": False,
+                "message": f"Error al obtener detalle de ventas: {error_msg}",
             }
 
     @staticmethod

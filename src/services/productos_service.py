@@ -196,6 +196,8 @@ class ProductosService:
             stock_actual: cantidad inicial disponible (por defecto 0)
         """
         print(f"--- Creando producto: {nombre} ---")
+        if not AuthService.es_administrador():
+            return {"success": False, "message": "No tiene permisos para crear productos"}
         try:
             producto = run_query(
                 """
@@ -251,6 +253,8 @@ class ProductosService:
             precio:      nuevo precio (por defecto 0)
         """
         print(f"--- Actualizando producto id: {producto_id} ---")
+        if not AuthService.es_administrador():
+            return {"success": False, "message": "No tiene permisos para editar productos"}
         try:
             anterior = run_query(
                 "SELECT precio FROM productos WHERE id = %s",
@@ -325,6 +329,8 @@ class ProductosService:
             dict: contrato estándar; incluye 'ruta', 'url' y 'es_plantilla'.
         """
         print("--- Exportando productos a Excel ---")
+        if not AuthService.es_administrador():
+            return {"success": False, "message": "No tiene permisos para exportar productos"}
         try:
             project_root = Path(__file__).resolve().parents[2]
             if not ruta_salida:
@@ -482,6 +488,8 @@ class ProductosService:
             producto_id: el id del producto a eliminar
         """
         print(f"--- Eliminando producto id: {producto_id} ---")
+        if not AuthService.es_administrador():
+            return {"success": False, "message": "No tiene permisos para eliminar productos"}
         try:
             eliminado = run_query(
                 "DELETE FROM productos WHERE id = %s RETURNING id",
@@ -531,6 +539,8 @@ class ProductosService:
                   creados, errores y lista de mensajes por fila.
         """
         print(f"--- Importando productos desde: {ruta_archivo} ---")
+        if not AuthService.es_administrador():
+            return {"success": False, "message": "No tiene permisos para importar productos"}
         try:
             if not ruta_archivo or not os.path.exists(ruta_archivo):
                 return {

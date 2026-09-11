@@ -22,6 +22,7 @@ import threading
 
 import flet as ft
 
+from src.services.auth_service import AuthService
 from src.services.usuarios_service import UsuariosService, ROLES_VALIDOS
 from src.ui.components.status_header import StatusHeader
 from src.ui.components.page_header import PageHeader
@@ -30,6 +31,7 @@ _COLORES_ROL = {
     "administrador": ("#FEE2E2", "#B91C1C"),
     "vendedor": ("#DCFCE7", "#15803D"),
     "bodeguero": ("#DBEAFE", "#1D4ED8"),
+    "empleado": ("#F3E8FF", "#7E22CE"),
 }
 
 
@@ -53,6 +55,57 @@ class _UsuariosView(ft.Container):
 
         # ── SnackBar
         self._snackbar = ft.SnackBar(content=ft.Text(""), show_close_icon=True)
+
+        # ── Diálogo de crear usuario
+        self._campo_nombre = ft.TextField(
+            label="Nombre *",
+            hint_text='Ej: "María López"',
+            border_radius=10,
+        )
+        self._campo_email = ft.TextField(
+            label="Correo / usuario *",
+            hint_text="Ej: maria@perfumas.com",
+            border_radius=10,
+        )
+        self._campo_password = ft.TextField(
+            label="Contraseña inicial *",
+            password=True,
+            can_reveal_password=True,
+            border_radius=10,
+        )
+        self._campo_rol_nuevo = ft.Dropdown(
+            label="Rol *",
+            border_radius=10,
+            options=[
+                ft.DropdownOption(key="administrador", text="Administrador"),
+                ft.DropdownOption(key="empleado", text="Empleado"),
+            ],
+            value="empleado",
+        )
+        self._dialog_crear = ft.AlertDialog(
+            modal=True,
+            title=ft.Text("Crear usuario"),
+            content=ft.Column(
+                tight=True,
+                spacing=12,
+                controls=[
+                    self._campo_nombre,
+                    self._campo_email,
+                    self._campo_password,
+                    self._campo_rol_nuevo,
+                ],
+            ),
+            actions=[
+                ft.TextButton("Cancelar", on_click=self._cerrar_dialogo_crear),
+                ft.ElevatedButton(
+                    "Guardar",
+                    bgcolor="#9eff8f",
+                    color="black",
+                    on_click=self._guardar_usuario,
+                ),
+            ],
+            actions_alignment=ft.MainAxisAlignment.END,
+        )
 
         # ── Diálogo de cambio de rol
         self._campo_rol = ft.Dropdown(
@@ -118,6 +171,7 @@ class _UsuariosView(ft.Container):
     # ── Lifecycle ───────────────────────────────────────────────────────
     def did_mount(self):
         self.page.overlay.append(self._dialog_rol)
+        self.page.overlay.append(self._dialog_crear)
         self.page.overlay.append(self._snackbar)
         self.page.update()
         self._status_header.load(self.page)
@@ -134,10 +188,21 @@ class _UsuariosView(ft.Container):
     # ======================================================
 
     def _header(self):
+        es_admin = AuthService.get_rol() == "administrador"
+        action_buttons = [
+            ft.ElevatedButton(
+                "Crear usuario",
+                icon=ft.Icons.PERSON_ADD,
+                bgcolor="#9eff8f",
+                color="black",
+                on_click=self._abrir_dialogo_crear,
+            )
+        ]
         return PageHeader(
             title="Usuarios",
             subtitle="Gestión de usuarios y roles del sistema",
             status_control=self._status_header.control,
+            action_buttons=action_buttons if es_admin else None,
         )
 
     # ======================================================
@@ -279,6 +344,43 @@ class _UsuariosView(ft.Container):
     # ======================================================
     # FEEDBACK
     # ======================================================
+
+    def _abrir_dialogo_crear(self, e=None):
+        self._campo_nombre.value = ""
+        self._campo_email.value = ""
+        self._campo_password.value = ""
+        self._campo_rol_nuevo.value = "empleado"
+        self._dialog_crear.open = True
+        self.page.update()
+
+    def _cerrar_dialogo_crear(self, e=None):
+        self._dialog_crear.open = False
+        self.page.update()
+
+    def _guardar_usuario(self, e=None):
+        nombre = (self._campo_nombre.value or "").strip()
+        email = (self._campo_email.value or "").strip()
+        password = (self._campo_password.value or "").strip()
+        rol = (self._campo_rol_nuevo.value or "").strip()
+
+        if not nombre or not email or not password or not rol:
+            self._mostrar_snack("⚠️ Complete todos los campos.", error=True)
+            return
+
+        self._cerrar_dialogo_crear()
+
+        def _worker():
+            result = UsuariosService.create(
+                nombre=nombre,
+                email=email,
+                password=password,
+                rol=rol,
+            )
+            self._mostrar_snack(result["message"], error=not result["success"])
+            if result.get("success"):
+                self._cargar_usuarios()
+
+        threading.Thread(target=_worker, daemon=True).start()
 
     def _mostrar_snack(self, mensaje: str, error: bool = False):
         self._snackbar.content = ft.Text(mensaje, color="white")

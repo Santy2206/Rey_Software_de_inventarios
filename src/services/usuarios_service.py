@@ -14,10 +14,11 @@ Mismo contrato que el resto de servicios:
 """
 
 from src.core.local_db import run_query
+from src.core.supabase_client import supabase
 from src.services.auth_service import AuthService
 from src.services.bitacora_service import BitacoraService
 
-ROLES_VALIDOS = ["administrador", "vendedor", "bodeguero"]
+ROLES_VALIDOS = ["administrador", "vendedor", "bodeguero", "empleado"]
 
 
 def _registrar_bitacora_usuarios(
@@ -70,6 +71,87 @@ class UsuariosService:
             }
 
     @staticmethod
+    def create(nombre: str, email: str, password: str, rol: str):
+        """
+        Crea un usuario en Supabase Auth y lo refleja en la tabla local.
+
+        El password se maneja por Supabase Auth; en local solo se guarda
+        un marcador 'supabase-managed'.
+        """
+        print(f"--- Creando usuario: {email} ---")
+        if not AuthService.es_administrador():
+            return {"success": False, "message": "No tiene permisos para crear usuarios"}
+        try:
+            nombre_limpio = (nombre or "").strip()
+            email_limpio = (email or "").strip().lower()
+            password_limpio = (password or "").strip()
+            rol_limpio = (rol or "").strip()
+
+            if not nombre_limpio:
+                return {"success": False, "message": "El nombre es obligatorio"}
+            if not email_limpio or "@" not in email_limpio:
+                return {"success": False, "message": "Ingrese un correo válido"}
+            if not password_limpio or len(password_limpio) < 6:
+                return {
+                    "success": False,
+                    "message": "La contraseña debe tener al menos 6 caracteres",
+                }
+            if rol_limpio not in ROLES_VALIDOS:
+                return {
+                    "success": False,
+                    "message": f"Rol no válido. Válidos: {', '.join(ROLES_VALIDOS)}",
+                }
+
+            existente = run_query(
+                "SELECT id FROM usuarios WHERE LOWER(email) = %s",
+                (email_limpio,),
+                fetch_one=True,
+            )
+            if existente:
+                return {
+                    "success": False,
+                    "message": f"Ya existe un usuario con el correo '{email_limpio}'",
+                }
+
+            # Crear el usuario en Supabase Auth
+            auth = supabase.auth.sign_up(
+                {"email": email_limpio, "password": password_limpio}
+            )
+            if not auth or not getattr(auth, "user", None):
+                return {
+                    "success": False,
+                    "message": "No se pudo crear el usuario en Supabase Auth",
+                }
+
+            user_id = str(auth.user.id)
+
+            # Crear el reflejo local
+            run_query(
+                """
+                INSERT INTO usuarios (id, name, email, rol, password_hash)
+                VALUES (%s, %s, %s, %s, %s)
+                """,
+                (user_id, nombre_limpio, email_limpio, rol_limpio, "supabase-managed"),
+            )
+
+            _registrar_bitacora_usuarios(
+                "CREACION_USUARIO",
+                entidad_id=user_id,
+                detalle=f"Usuario creado: {nombre_limpio} ({email_limpio}) con rol {rol_limpio}",
+            )
+
+            print(f" Usuario '{nombre_limpio}' creado con éxito")
+            return {
+                "success": True,
+                "message": f"Usuario '{nombre_limpio}' creado con éxito",
+            }
+
+        except Exception as e:
+            error_msg = str(e)
+            print(f" Error en UsuariosService.create: {error_msg}")
+            return {"success": False, "message": f"Error al crear usuario: {error_msg}"}
+
+    @staticmethod
     def cambiar_rol(usuario_id: str, nuevo_rol: str):
         """
         Cambia el rol de un usuario.
@@ -79,11 +161,14 @@ class UsuariosService:
             nuevo_rol:  debe estar en ROLES_VALIDOS
 
         Reglas:
+            - Solo administradores.
             - No se puede cambiar el rol del usuario de la sesión actual
               (evita que un administrador se quite el acceso a sí mismo).
             - Registra CAMBIO_ROL en la bitácora.
         """
         print(f"--- Cambiando rol del usuario {usuario_id} a '{nuevo_rol}' ---")
+        if not AuthService.es_administrador():
+            return {"success": False, "message": "No tiene permisos para cambiar roles"}
         try:
             if nuevo_rol not in ROLES_VALIDOS:
                 return {

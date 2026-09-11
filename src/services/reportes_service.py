@@ -13,6 +13,7 @@ Mismo contrato que el resto de servicios:
   - SIN importaciones de Flet — solo lógica pura
 """
 
+from src.services.auth_service import AuthService
 from src.services.bodegas_service import BodegasService
 from src.services.productos_service import ProductosService
 from src.services.ventas_service import VentasService
@@ -66,6 +67,8 @@ class ReportesService:
         Retorna:
             dict: contrato estándar; 'data' contiene {'filas': [...], 'tipo': ...}
         """
+        if not AuthService.es_administrador():
+            return {"success": False, "message": "No tiene permisos para generar reportes"}
         print(f"--- Generando reporte: {tipo} ---")
 
         if tipo not in _TIPOS_REPORTE:
@@ -99,7 +102,7 @@ class ReportesService:
                 }
 
             if tipo == "Ventas":
-                res = VentasService.get_all()
+                res = VentasService.get_ventas_detalle()
                 if not res.get("success"):
                     return res
                 ventas = _filtrar_por_fecha(res.get("data", []), anio, mes)
@@ -155,6 +158,8 @@ class ReportesService:
         Retorna:
             dict: contrato estándar; 'data' contiene la ruta del archivo.
         """
+        if not AuthService.es_administrador():
+            return {"success": False, "message": "No tiene permisos para exportar reportes"}
         print(f"--- Exportando reporte: {tipo} ({formato}) ---")
 
         try:

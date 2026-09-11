@@ -114,6 +114,14 @@ VIEWS = {
     "USUARIOS": UsuariosView,
 }
 
+# Vistas permitidas por rol (debe coincidir con el Sidebar).
+_VISTAS_PERMITIDAS = {
+    "administrador": set(VIEWS.keys()),
+    "empleado": {"dashboard", "VENTAS", "REVISION_VENTAS", "CLIENTES"},
+    "vendedor": {"dashboard", "VENTAS", "REVISION_VENTAS", "CLIENTES"},
+    "bodeguero": {"dashboard", "VENTAS", "REVISION_VENTAS", "CLIENTES"},
+}
+
 
 def DashboardView(rol: str, user_id: str | None, on_logout):
     """
@@ -140,12 +148,20 @@ def DashboardView(rol: str, user_id: str | None, on_logout):
 
     # Se define primero para pasarla al Sidebar; sidebar se asigna después.
     def load_content(page_name: str):
+        permitidas = _VISTAS_PERMITIDAS.get((rol or "").lower(), set())
+        if page_name not in permitidas:
+            print(f"Acceso denegado a {page_name} para rol {rol}")
+            return
         sidebar.set_active(page_name)
         content_area.controls.clear()
         content_area.controls.append(VIEWS[page_name]())
         content_area.update()
 
-    sidebar = Sidebar(on_navigate=load_content, on_logout=on_logout)
+    sidebar = Sidebar(
+        on_navigate=load_content,
+        on_logout=on_logout,
+        rol=rol,
+    )
     sidebar.set_active("dashboard")
 
     return ft.Row(
