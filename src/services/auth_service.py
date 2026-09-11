@@ -1,10 +1,10 @@
 """
 Servicio de autenticación.
 
-Maneja la lógica de inicio de sesión contra PostgreSQL local:
-1. Busca el usuario por el campo 'name' en la tabla 'usuarios'.
-2. Verifica la contraseña contra 'password_hash'.
-3. Devuelve el resultado en el contrato habitual — nunca lanza excepciones a la UI.
+El login es contra Supabase Auth. Supabase es el encargado de gestionar
+usuarios, contraseñas y tokens. La tabla local 'usuarios' se usa solo para
+obtener el id, nombre y rol del usuario autenticado (se crea o sincroniza
+automáticamente si no existe).
 
 Retorna:
     dict: {
@@ -15,15 +15,15 @@ Retorna:
 
 Reglas:
     - SIN importaciones de Flet.
-    - Todos los errores se capturan internamente y se retornan como diccionarios.
+    - Todos los errores se capturan internamente y se retornan diccionarios.
 """
 
-import hashlib
 import json
 import time
 from pathlib import Path
 
 from src.core.local_db import run_query
+from src.core.supabase_client import supabase
 from src.services.bitacora_service import BitacoraService
 
 _current_usuario_id = None
@@ -35,86 +35,98 @@ _SESSION_FILE = Path(__file__).resolve().parents[2] / ".rey_session.json"
 _SESSION_TTL_SECONDS = 12 * 60 * 60  # 12 horas
 
 
-def _verificar_password(plain: str, hashed: str) -> bool:
-    """
-    Verifica una contraseña candidata contra el hash almacenado.
-
-    Soporta:
-      - Hashes SHA-256 hex (común en migraciones locales).
-      - Comparación directa si aún se almacena en texto plano (NO recomendado).
-
-    Si en el futuro se adopta bcrypt/argon2, reemplazar esta función por
-    la librería de hashing correspondiente.
-    """
-    if not plain or not hashed:
-        return False
-    if plain == hashed:
-        return True
-    sha = hashlib.sha256(plain.encode("utf-8")).hexdigest()
-    return sha == hashed
+def _localizar_por_email(email: str):
+    """Busca o crea un usuario local a partir del email de Supabase."""
+    row = run_query(
+        "SELECT id, name, email, rol FROM usuarios WHERE LOWER(email) = LOWER(%s)",
+        (email,),
+        fetch_one=True,
+    )
+    if row:
+        return dict(row)
+    # Si no existe localmente, creamos un registro básico para poder operar.
+    return run_query(
+        """
+        INSERT INTO usuarios (name, email, rol, password_hash, dirty)
+        VALUES (%s, %s, %s, %s, true)
+        RETURNING id, name, email, rol
+        """,
+        (email, email, "vendedor", "supabase-managed"),
+        fetch_one=True,
+    )
 
 
 class AuthService:
     @staticmethod
     def login(username_typed, password_typed):
-        global _current_usuario_id, _current_usuario_rol
+        global _current_usuario_id, _current_usuario_rol, _current_usuario_name
 
         print(f"--- Intento de login: {username_typed} ---")
 
-        try:
-            rows = run_query(
-                "SELECT id, name, email, rol, password_hash FROM usuarios WHERE name = %s",
-                (username_typed,),
+        if not password_typed or not str(password_typed).strip():
+            return {"success": False, "message": "Ingrese la contraseña"}
+
+        # El usuario puede escribir email o nombre local. Si no tiene '@',
+        # buscamos el email asociado en la tabla local.
+        email = str(username_typed).strip()
+        if "@" not in email:
+            row = run_query(
+                "SELECT email FROM usuarios WHERE name = %s LIMIT 1",
+                (email,),
+                fetch_one=True,
             )
-
-            if not rows:
-                print("Usuario no encontrado en la tabla 'usuarios'")
+            if not row or not row.get("email"):
                 return {
                     "success": False,
-                    "message": "El nombre de usuario no existe",
+                    "message": "Usuario no encontrado",
                 }
+            email = row["email"]
 
-            user_data = rows[0]
+        try:
+            auth = supabase.auth.sign_in_with_password(
+                {"email": email, "password": str(password_typed)}
+            )
+            if not auth or not getattr(auth, "user", None):
+                return {"success": False, "message": "Contraseña incorrecta"}
 
-            if not _verificar_password(password_typed, user_data["password_hash"]):
-                print("Contraseña incorrecta")
-                BitacoraService.registrar(
-                    user_data["id"],
-                    "LOGIN_FALLIDO",
-                    entidad="usuario",
-                    entidad_id=user_data["id"],
-                    detalle=f"Intento fallido de login: {username_typed}",
-                )
+            user_email = auth.user.email or email
+            local = _localizar_por_email(user_email)
+            if not local:
                 return {
                     "success": False,
-                    "message": "Contraseña incorrecta",
+                    "message": "No se pudo sincronizar el usuario local",
                 }
 
-            _current_usuario_id = user_data["id"]
-            _current_usuario_rol = user_data["rol"]
-            _current_usuario_name = user_data["name"]
+            _current_usuario_id = local["id"]
+            _current_usuario_rol = local["rol"]
+            _current_usuario_name = local["name"]
             AuthService._guardar_sesion(
-                user_id=user_data["id"],
-                rol=user_data["rol"],
-                name=user_data["name"],
+                user_id=local["id"],
+                rol=local["rol"],
+                name=local["name"],
+                email=local.get("email") or user_email,
             )
 
             print("Login exitoso!")
             return {
                 "success": True,
-                "message": f"Bienvenido {username_typed}",
-                "id": user_data["id"],
-                "rol": user_data["rol"],
-                "name": user_data["name"],
+                "message": f"Bienvenido {local['name']}",
+                "id": local["id"],
+                "rol": local["rol"],
+                "name": local["name"],
             }
 
         except Exception as e:
             error_msg = str(e)
             print(f"Error en AuthService: {error_msg}")
-            return {
-                "success": False,
-                "message": f"Error: {error_msg}",
-            }
+            if "Invalid login" in error_msg or "invalid" in error_msg.lower():
+                return {"success": False, "message": "Correo o contraseña incorrectos"}
+            if "network" in error_msg.lower() or "connection" in error_msg.lower():
+                return {
+                    "success": False,
+                    "message": "Sin conexión con Supabase. Verifique internet.",
+                }
+            return {"success": False, "message": f"Error: {error_msg}"}
 
     @staticmethod
     def get_usuario_id():
@@ -140,16 +152,16 @@ class AuthService:
     @staticmethod
     def verificar_password_sesion(password_typed: str):
         """
-        Verifica la contraseña del usuario de la sesión actual.
+        Re-autentica contra Supabase con la contraseña ingresada.
 
-        Útil para re-autenticar antes de acciones sensibles (editar/eliminar).
+        Útil antes de acciones sensibles (editar/eliminar).
 
         Retorna:
             dict: {"success": bool, "message": str}
         """
         try:
-            usuario_id = AuthService.get_usuario_id()
-            if not usuario_id:
+            sess = AuthService._leer_sesion()
+            if not sess or not sess.get("email"):
                 return {
                     "success": False,
                     "message": "No hay sesión activa. Inicie sesión de nuevo.",
@@ -161,31 +173,13 @@ class AuthService:
                     "message": "Debe ingresar su contraseña",
                 }
 
-            user_data = run_query(
-                "SELECT id, password_hash FROM usuarios WHERE id = %s",
-                (usuario_id,),
-                fetch_one=True,
+            supabase.auth.sign_in_with_password(
+                {"email": sess["email"], "password": str(password_typed).strip()}
             )
-            if not user_data:
-                return {
-                    "success": False,
-                    "message": "Usuario de sesión no encontrado",
-                }
-
-            if not _verificar_password(password_typed, user_data["password_hash"]):
-                return {
-                    "success": False,
-                    "message": "Contraseña incorrecta",
-                }
-
             return {"success": True, "message": "Contraseña verificada"}
         except Exception as e:
-            error_msg = str(e)
-            print(f"Error en AuthService.verificar_password_sesion: {error_msg}")
-            return {
-                "success": False,
-                "message": f"Error al verificar contraseña: {error_msg}",
-            }
+            print(f"Error en AuthService.verificar_password_sesion: {e}")
+            return {"success": False, "message": "Contraseña incorrecta"}
 
     @staticmethod
     def get_rol():
@@ -203,22 +197,52 @@ class AuthService:
 
     @staticmethod
     def logout():
-        """Cierra la sesión en memoria y elimina el archivo local."""
+        """Cierra la sesión en Supabase y en memoria."""
         global _current_usuario_id, _current_usuario_rol, _current_usuario_name
         _current_usuario_id = None
         _current_usuario_rol = None
         _current_usuario_name = None
+        try:
+            supabase.auth.sign_out()
+        except Exception as e:
+            print(f"No se pudo cerrar sesión en Supabase: {e}")
         AuthService._borrar_sesion()
 
     @staticmethod
     def restore_session():
         """
-        Restaura la sesión desde el archivo local, si sigue vigente.
+        Restaura la sesión desde Supabase (online) o desde el archivo local.
 
         Retorna:
             dict | None: {'id', 'rol', 'name'} si hay sesión válida; None si no.
         """
         global _current_usuario_id, _current_usuario_rol, _current_usuario_name
+
+        # 1) Intentar validar sesión activa en Supabase
+        try:
+            user_resp = supabase.auth.get_user()
+            user = user_resp.user if user_resp else None
+            if user and user.email:
+                local = _localizar_por_email(user.email)
+                if local:
+                    _current_usuario_id = local["id"]
+                    _current_usuario_rol = local["rol"]
+                    _current_usuario_name = local["name"]
+                    AuthService._guardar_sesion(
+                        user_id=local["id"],
+                        rol=local["rol"],
+                        name=local["name"],
+                        email=user.email,
+                    )
+                    return {
+                        "id": local["id"],
+                        "rol": local["rol"],
+                        "name": local["name"],
+                    }
+        except Exception as e:
+            print(f"No se pudo restaurar sesión en Supabase: {e}")
+
+        # 2) Fallback offline por archivo local
         data = AuthService._leer_sesion()
         if not data:
             return None
@@ -228,7 +252,6 @@ class AuthService:
             AuthService._borrar_sesion()
             return None
 
-        # Verificar que el usuario sigue existiendo en la BD local
         row = run_query(
             "SELECT id, name, rol FROM usuarios WHERE id = %s",
             (usuario_id,),
@@ -248,11 +271,12 @@ class AuthService:
         }
 
     @staticmethod
-    def _guardar_sesion(user_id: str, rol: str, name: str):
+    def _guardar_sesion(user_id: str, rol: str, name: str, email: str = ""):
         payload = {
             "id": user_id,
             "rol": rol,
             "name": name,
+            "email": email,
             "saved_at": time.time(),
         }
         try:

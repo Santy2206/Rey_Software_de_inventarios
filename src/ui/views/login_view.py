@@ -23,7 +23,7 @@ import flet as ft
 
 def LoginView(on_login):
     usuario_input = ft.TextField(
-        hint_text="Usuario",
+        hint_text="Email o usuario",
         border_radius=30,
         filled=True,
         bgcolor="#f5e6d3",
