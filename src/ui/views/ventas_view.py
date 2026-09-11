@@ -147,14 +147,14 @@ class _VentasView(ft.Container):
             expand=1,
             options=[ft.DropdownOption(key="", text="Todas")],
             value="",
-            on_change=self._aplicar_filtros,
+            on_select=self._aplicar_filtros,
         )
         self._filtro_usuario = ft.Dropdown(
             label="Vendedor",
             expand=1,
             options=[ft.DropdownOption(key="", text="Todos")],
             value="",
-            on_change=self._aplicar_filtros,
+            on_select=self._aplicar_filtros,
         )
 
         self._campo_cedula_cliente = ft.TextField(
