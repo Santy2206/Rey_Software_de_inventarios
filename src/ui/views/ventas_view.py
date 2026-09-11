@@ -21,6 +21,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP
 
 import flet as ft
@@ -125,33 +126,57 @@ class _VentasView(ft.Container):
             weight=ft.FontWeight.BOLD,
         )
         self._buscar = ft.TextField(
-            expand=2,
+            width=300,
             hint_text="Buscar cliente...",
             prefix_icon=ft.Icons.SEARCH,
             on_change=self._aplicar_filtros,
         )
+        self._picker_inicio = ft.DatePicker(
+            first_date=datetime(2020, 1, 1),
+            last_date=datetime(2100, 12, 31),
+            on_change=self._on_fecha_inicio,
+        )
+        self._picker_fin = ft.DatePicker(
+            first_date=datetime(2020, 1, 1),
+            last_date=datetime(2100, 12, 31),
+            on_change=self._on_fecha_fin,
+        )
         self._filtro_fecha_inicio = ft.TextField(
             label="Fecha inicio",
-            hint_text="AAAA-MM-DD",
-            expand=1,
-            on_change=self._aplicar_filtros,
+            hint_text="dd/mm/aaaa",
+            width=130,
+            on_change=self._on_change_fecha_inicio,
+            on_blur=self._aplicar_filtros,
+            on_submit=self._aplicar_filtros,
+        )
+        self._btn_calendario_inicio = ft.IconButton(
+            icon=ft.Icons.CALENDAR_MONTH,
+            tooltip="Seleccionar fecha inicio",
+            on_click=lambda _: self._abrir_calendario("inicio"),
         )
         self._filtro_fecha_fin = ft.TextField(
             label="Fecha fin",
-            hint_text="AAAA-MM-DD",
-            expand=1,
-            on_change=self._aplicar_filtros,
+            hint_text="dd/mm/aaaa",
+            width=130,
+            on_change=self._on_change_fecha_fin,
+            on_blur=self._aplicar_filtros,
+            on_submit=self._aplicar_filtros,
+        )
+        self._btn_calendario_fin = ft.IconButton(
+            icon=ft.Icons.CALENDAR_MONTH,
+            tooltip="Seleccionar fecha fin",
+            on_click=lambda _: self._abrir_calendario("fin"),
         )
         self._filtro_bodega = ft.Dropdown(
             label="Bodega",
-            expand=1,
+            width=200,
             options=[ft.DropdownOption(key="", text="Todas")],
             value="",
             on_select=self._aplicar_filtros,
         )
         self._filtro_usuario = ft.Dropdown(
             label="Vendedor",
-            expand=1,
+            width=200,
             options=[ft.DropdownOption(key="", text="Todos")],
             value="",
             on_select=self._aplicar_filtros,
@@ -313,6 +338,8 @@ class _VentasView(ft.Container):
         self.page.overlay.append(self._dialog_anular)
         self.page.overlay.append(self._dialog_importar)
         self.page.overlay.append(self._dialog_detalle)
+        self.page.overlay.append(self._picker_inicio)
+        self.page.overlay.append(self._picker_fin)
         self.page.overlay.append(self._snackbar)
         self.page.update()
         self._status_header.load(self.page)
@@ -339,8 +366,22 @@ class _VentasView(ft.Container):
         self.page.update()
 
     def _cargar_historial(self):
-        inicio = (self._filtro_fecha_inicio.value or "").strip() or None
-        fin = (self._filtro_fecha_fin.value or "").strip() or None
+        inicio = self._fecha_a_iso(
+            (self._filtro_fecha_inicio.value or "").strip()
+        )
+        fin = self._fecha_a_iso(
+            (self._filtro_fecha_fin.value or "").strip()
+        )
+
+        if inicio and fin and inicio > fin:
+            self._mostrar_snack(
+                "La fecha fin debe ser mayor o igual a la fecha inicio",
+                error=True,
+            )
+            self._ventas = []
+            self._refrescar_tabla()
+            return
+
         bodega = (self._filtro_bodega.value or "").strip() or None
         usuario = (self._filtro_usuario.value or "").strip() or None
         cliente = (self._buscar.value or "").strip() or None
@@ -551,8 +592,20 @@ class _VentasView(ft.Container):
                         alignment=ft.MainAxisAlignment.START,
                         controls=[
                             self._buscar,
-                            self._filtro_fecha_inicio,
-                            self._filtro_fecha_fin,
+                            ft.Row(
+                                spacing=0,
+                                controls=[
+                                    self._filtro_fecha_inicio,
+                                    self._btn_calendario_inicio,
+                                ],
+                            ),
+                            ft.Row(
+                                spacing=0,
+                                controls=[
+                                    self._filtro_fecha_fin,
+                                    self._btn_calendario_fin,
+                                ],
+                            ),
                             self._filtro_bodega,
                             self._filtro_usuario,
                         ],
@@ -578,6 +631,65 @@ class _VentasView(ft.Container):
             if str(producto["id"]) == str(producto_id):
                 return producto
         return None
+
+    def _fecha_a_iso(self, fecha_str: str) -> str | None:
+        """Convierte dd/mm/aaaa a aaaa-mm-dd para el filtro de ventas."""
+        if not fecha_str:
+            return None
+        try:
+            return datetime.strptime(fecha_str, "%d/%m/%Y").strftime("%Y-%m-%d")
+        except ValueError:
+            return None
+
+    def _on_fecha_inicio(self, e):
+        fecha = e.control.value
+        self._filtro_fecha_inicio.value = (
+            fecha.strftime("%d/%m/%Y") if fecha else ""
+        )
+        self.update()
+        self._aplicar_filtros()
+
+    def _on_fecha_fin(self, e):
+        fecha = e.control.value
+        self._filtro_fecha_fin.value = (
+            fecha.strftime("%d/%m/%Y") if fecha else ""
+        )
+        self.update()
+        self._aplicar_filtros()
+
+    def _formatear_fecha(self, texto: str) -> str:
+        """Convierte digitos sueltos a dd/mm/aaaa mientras se escribe."""
+        digitos = "".join(c for c in (texto or "") if c.isdigit())[:8]
+        if len(digitos) >= 7:
+            return f"{digitos[:2]}/{digitos[2:4]}/{digitos[4:]}"
+        if len(digitos) >= 5:
+            return f"{digitos[:2]}/{digitos[2:4]}/{digitos[4:]}"
+        if len(digitos) >= 3:
+            return f"{digitos[:2]}/{digitos[2:]}"
+        return digitos
+
+    def _on_change_fecha_inicio(self, e):
+        self._filtro_fecha_inicio.value = self._formatear_fecha(
+            e.control.value
+        )
+        self._filtro_fecha_inicio.update()
+        if len(self._filtro_fecha_inicio.value) in (0, 10):
+            self._aplicar_filtros()
+
+    def _on_change_fecha_fin(self, e):
+        self._filtro_fecha_fin.value = self._formatear_fecha(
+            e.control.value
+        )
+        self._filtro_fecha_fin.update()
+        if len(self._filtro_fecha_fin.value) in (0, 10):
+            self._aplicar_filtros()
+
+    def _abrir_calendario(self, tipo: str):
+        picker = (
+            self._picker_inicio if tipo == "inicio" else self._picker_fin
+        )
+        picker.open = True
+        self.page.update()
 
     def _agregar_al_carrito(self, e=None):
         producto_id = self._campo_producto.value
