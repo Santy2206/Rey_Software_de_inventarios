@@ -2,24 +2,43 @@
 Servicio de Movimientos de Inventario.
 
 Registra TODA entrada, salida, ajuste o baja de productos en las bodegas.
-Este servicio hace DOS cosas al mismo tiempo en cada operación:
+Este servicio hace DOS cosas atómicas en cada operación:
   1. Inserta un registro en la tabla 'movimientos' (historial/trazabilidad)
   2. Actualiza el stock del producto en la tabla 'productos'
 
-Sigue el mismo patrón que auth_service.py:
+Sigue el mismo patrón que el resto de servicios:
   - Cada función usa try/except
   - Siempre retorna un diccionario con 'success' y 'message'
   - SIN importaciones de Flet — solo lógica pura
 
-Tabla esperada en Supabase:
-    movimientos (id, producto_id, bodega_id, tipo, cantidad, motivo, fecha, usuario_id)
+Tabla local:
+    movimientos (id, producto_id, bodega_id, usuario_id, tipo, cantidad, fecha, motivo)
 
-    tipo solo puede ser: "entrada", "salida", "ajuste", "baja"
+    tipo solo puede ser: "ingreso", "egreso", "transferencia"
+    (según el CHECK CONSTRAINT movimientos_tipo_check de PostgreSQL)
 """
 
-from src.core.supabase_client import supabase
+from src.core.local_db import get_cursor, run_query
+from src.services.bitacora_service import BitacoraService
 
-TIPOS_VALIDOS = ["entrada", "salida", "ajuste", "baja"]
+TIPOS_VALIDOS = ["ingreso", "egreso", "transferencia"]
+
+
+def _registrar_bitacora_stock(
+    accion: str, producto_id: str, detalle: str, usuario_id: str
+):
+    """Registra en bitácora sin afectar la operación principal."""
+    try:
+        if usuario_id:
+            BitacoraService.registrar(
+                usuario_id,
+                accion,
+                entidad="producto",
+                entidad_id=producto_id,
+                detalle=detalle,
+            )
+    except Exception as e:
+        print(f" Error al registrar bitácora de stock: {e}")
 
 
 class MovimientosService:
@@ -32,28 +51,37 @@ class MovimientosService:
         """
         print("--- Trayendo todos los movimientos ---")
         try:
-            res = (
-                supabase.table("movimientos")
-                # ✅ agregado join a usuarios(username) para poder mostrar
-                #    quién registró cada movimiento en la vista de historial
-                .select("*, productos(nombre), bodegas(nombre), usuarios(username)")
-                .order("fecha", desc=True)
-                .execute()
-            )
+            data = run_query("""
+                SELECT
+                    m.*,
+                    p.nombre AS producto_nombre,
+                    b.nombre AS bodega_nombre,
+                    u.name AS usuario_name
+                FROM movimientos m
+                LEFT JOIN productos p ON m.producto_id = p.id
+                LEFT JOIN bodegas b ON m.bodega_id = b.id
+                LEFT JOIN usuarios u ON m.usuario_id = u.id
+                ORDER BY m.fecha DESC
+            """)
 
-            if not res.data:
-                return {"success": False, "message": "No hay movimientos registrados"}
+            if not data:
+                print("No hay movimientos registrados aún")
+                return {
+                    "success": True,
+                    "message": "No hay movimientos registrados",
+                    "data": [],
+                }
 
-            print(f"✅ Se encontraron {len(res.data)} movimiento(s)")
+            print(f"Se encontraron {len(data)} movimiento(s)")
             return {
                 "success": True,
                 "message": "Movimientos obtenidos",
-                "data": res.data,
+                "data": data,
             }
 
         except Exception as e:
             error_msg = str(e)
-            print(f"🔥 Error en MovimientosService.get_all: {error_msg}")
+            print(f"Error en MovimientosService.get_all: {error_msg}")
             return {
                 "success": False,
                 "message": f"Error al obtener movimientos: {error_msg}",
@@ -67,29 +95,27 @@ class MovimientosService:
         """
         print(f"--- Trayendo movimientos del producto: {producto_id} ---")
         try:
-            res = (
-                supabase.table("movimientos")
-                .select("*")
-                .eq("producto_id", producto_id)
-                .order("fecha", desc=True)
-                .execute()
+            data = run_query(
+                "SELECT * FROM movimientos WHERE producto_id = %s ORDER BY fecha DESC",
+                (producto_id,),
             )
 
-            if not res.data:
+            if not data:
                 return {
-                    "success": False,
+                    "success": True,
                     "message": "No hay movimientos para este producto",
+                    "data": [],
                 }
 
             return {
                 "success": True,
                 "message": "Movimientos obtenidos",
-                "data": res.data,
+                "data": data,
             }
 
         except Exception as e:
             error_msg = str(e)
-            print(f"🔥 Error en MovimientosService.get_by_producto: {error_msg}")
+            print(f"Error en MovimientosService.get_by_producto: {error_msg}")
             return {
                 "success": False,
                 "message": f"Error al obtener movimientos: {error_msg}",
@@ -106,65 +132,68 @@ class MovimientosService:
     ):
         """
         Función interna (privada) que hace el trabajo real.
+
         El guión bajo al inicio (_) es la convención en Python para decir
         "este método es solo para uso interno de esta clase".
 
-        Hace dos pasos:
+        Hace dos pasos atómicos dentro de una transacción:
           Paso 1: Verifica que el producto existe y tiene stock suficiente
           Paso 2: Inserta el movimiento Y actualiza el stock al mismo tiempo
         """
+        if tipo not in TIPOS_VALIDOS:
+            return {
+                "success": False,
+                "message": f"Tipo de movimiento no válido: {tipo}",
+            }
 
-        producto_res = (
-            supabase.table("productos")
-            .select("id, nombre, stock")
-            .eq("id", producto_id)
-            .maybe_single()
-            .execute()
-        )
+        with get_cursor() as cur:
+            cur.execute(
+                "SELECT id, nombre, stock_actual FROM productos WHERE id = %s FOR UPDATE",
+                (producto_id,),
+            )
+            producto = cur.fetchone()
 
-        if not producto_res.data:
-            return {"success": False, "message": "Producto no encontrado"}
+            if not producto:
+                return {"success": False, "message": "Producto no encontrado"}
 
-        stock_actual = producto_res.data["stock"]
-        nombre_producto = producto_res.data["nombre"]
+            stock_actual = producto["stock_actual"]
+            nombre_producto = producto["nombre"]
 
-        if tipo == "entrada":
-            nuevo_stock = stock_actual + cantidad
-        else:
-            if stock_actual < cantidad:
-                return {
-                    "success": False,
-                    "message": f"Stock insuficiente. Disponible: {stock_actual}, solicitado: {cantidad}",
-                }
-            nuevo_stock = stock_actual - cantidad
+            if tipo == "ingreso":
+                nuevo_stock = stock_actual + cantidad
+            else:
+                if stock_actual < cantidad:
+                    return {
+                        "success": False,
+                        "message": f"Stock insuficiente. Disponible: {stock_actual}, solicitado: {cantidad}",
+                    }
+                nuevo_stock = stock_actual - cantidad
 
-        nuevo_movimiento = {
-            "producto_id": producto_id,
-            "bodega_id": bodega_id,
-            "tipo": tipo,
-            "cantidad": cantidad,
-            "motivo": motivo,
-            "usuario_id": usuario_id,
-        }
+            cur.execute(
+                """
+                INSERT INTO movimientos
+                    (producto_id, bodega_id, usuario_id, tipo, cantidad, motivo, fecha)
+                VALUES (%s, %s, %s, %s, %s, %s, NOW())
+                RETURNING *
+                """,
+                (producto_id, bodega_id, usuario_id, tipo, cantidad, motivo),
+            )
+            movimiento = cur.fetchone()
 
-        mov_res = supabase.table("movimientos").insert(nuevo_movimiento).execute()
-
-        if not mov_res.data:
-            return {"success": False, "message": "No se pudo registrar el movimiento"}
-
-        supabase.table("productos").update({"stock": nuevo_stock}).eq(
-            "id", producto_id
-        ).execute()
+            cur.execute(
+                "UPDATE productos SET stock_actual = %s WHERE id = %s",
+                (nuevo_stock, producto_id),
+            )
 
         print(
-            f"✅ Movimiento registrado: {tipo} de {cantidad} unidades de '{nombre_producto}'"
+            f"Movimiento registrado: {tipo} de {cantidad} unidades de '{nombre_producto}'"
         )
         print(f"   Stock anterior: {stock_actual} → Stock nuevo: {nuevo_stock}")
 
         return {
             "success": True,
             "message": f"Movimiento registrado. Stock actualizado a {nuevo_stock}",
-            "data": mov_res.data[0],
+            "data": movimiento,
         }
 
     @staticmethod
@@ -174,6 +203,7 @@ class MovimientosService:
         """
         Registra la ENTRADA de productos a una bodega (aumenta el stock).
         Ej: llegó una compra nueva de 50 unidades de perfume.
+        En la base de datos el tipo del movimiento es "ingreso".
 
         Parámetros:
             producto_id: id del producto que entra
@@ -185,11 +215,11 @@ class MovimientosService:
         print(f"--- Registrando ENTRADA de {cantidad} unidades ---")
         try:
             return MovimientosService._registrar_movimiento(
-                producto_id, bodega_id, "entrada", cantidad, motivo, usuario_id
+                producto_id, bodega_id, "ingreso", cantidad, motivo, usuario_id
             )
         except Exception as e:
             error_msg = str(e)
-            print(f"🔥 Error en registrar_entrada: {error_msg}")
+            print(f"Error en registrar_entrada: {error_msg}")
             return {
                 "success": False,
                 "message": f"Error al registrar entrada: {error_msg}",
@@ -202,6 +232,7 @@ class MovimientosService:
         """
         Registra la SALIDA de productos de una bodega (reduce el stock).
         Ej: se retiraron 10 unidades para un evento.
+        En la base de datos el tipo del movimiento es "egreso".
 
         Parámetros:
             producto_id: id del producto que sale
@@ -213,11 +244,11 @@ class MovimientosService:
         print(f"--- Registrando SALIDA de {cantidad} unidades ---")
         try:
             return MovimientosService._registrar_movimiento(
-                producto_id, bodega_id, "salida", cantidad, motivo, usuario_id
+                producto_id, bodega_id, "egreso", cantidad, motivo, usuario_id
             )
         except Exception as e:
             error_msg = str(e)
-            print(f"🔥 Error en registrar_salida: {error_msg}")
+            print(f"Error en registrar_salida: {error_msg}")
             return {
                 "success": False,
                 "message": f"Error al registrar salida: {error_msg}",
@@ -230,6 +261,7 @@ class MovimientosService:
         """
         Registra un AJUSTE MANUAL por faltantes o sobrantes (reduce el stock).
         Ej: al hacer inventario físico se encontraron 5 unidades menos.
+        En la base de datos el tipo del movimiento es "egreso".
 
         Parámetros:
             producto_id: id del producto a ajustar
@@ -240,12 +272,20 @@ class MovimientosService:
         """
         print(f"--- Registrando AJUSTE de {cantidad} unidades ---")
         try:
-            return MovimientosService._registrar_movimiento(
-                producto_id, bodega_id, "ajuste", cantidad, motivo, usuario_id
+            resultado = MovimientosService._registrar_movimiento(
+                producto_id, bodega_id, "egreso", cantidad, motivo, usuario_id
             )
+            if resultado.get("success"):
+                _registrar_bitacora_stock(
+                    "AJUSTE_STOCK",
+                    producto_id,
+                    f"Ajuste de stock: -{cantidad} unidades. Motivo: {motivo}",
+                    usuario_id,
+                )
+            return resultado
         except Exception as e:
             error_msg = str(e)
-            print(f"🔥 Error en registrar_ajuste: {error_msg}")
+            print(f"Error en registrar_ajuste: {error_msg}")
             return {
                 "success": False,
                 "message": f"Error al registrar ajuste: {error_msg}",
@@ -258,6 +298,7 @@ class MovimientosService:
         """
         Registra una BAJA por productos dañados o caducados (reduce el stock).
         Ej: 3 frascos de perfume se rompieron durante el almacenamiento.
+        En la base de datos el tipo del movimiento es "egreso".
 
         Parámetros:
             producto_id: id del producto dado de baja
@@ -268,12 +309,20 @@ class MovimientosService:
         """
         print(f"--- Registrando BAJA de {cantidad} unidades ---")
         try:
-            return MovimientosService._registrar_movimiento(
-                producto_id, bodega_id, "baja", cantidad, motivo, usuario_id
+            resultado = MovimientosService._registrar_movimiento(
+                producto_id, bodega_id, "egreso", cantidad, motivo, usuario_id
             )
+            if resultado.get("success"):
+                _registrar_bitacora_stock(
+                    "BAJA_STOCK",
+                    producto_id,
+                    f"Baja de stock: -{cantidad} unidades. Motivo: {motivo}",
+                    usuario_id,
+                )
+            return resultado
         except Exception as e:
             error_msg = str(e)
-            print(f"🔥 Error en registrar_baja: {error_msg}")
+            print(f"Error en registrar_baja: {error_msg}")
             return {
                 "success": False,
                 "message": f"Error al registrar baja: {error_msg}",

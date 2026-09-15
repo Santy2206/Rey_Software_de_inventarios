@@ -2,22 +2,42 @@
 Vista de Bitácora.
 
 Muestra el historial de acciones del sistema, cargado en vivo desde
-BitacoraService (tabla 'bitacora'), con búsqueda por usuario y filtro
-por tipo de acción.
+BitacoraService (tabla 'bitacora'), con búsqueda por usuario, filtro
+por tipo de acción y rango de fecha.
 
 Sigue el mismo patrón que bodegas_view.py / productos_view.py:
   - Función pública BitacoraView() que envuelve la clase privada.
   - Clase _BitacoraView hereda de ft.Container.
   - La carga de datos corre en un hilo de fondo (threading), disparada
     desde did_mount().
+  - Un solo page.update() al final de cada operación de carga.
+  - SnackBar se registra en page.overlay desde did_mount().
+
+Reglas:
+    - SIN lógica de negocio — solo diseño e interacción de interfaz.
+    - SIN llamadas directas a local_db, psycopg2 ni Supabase.
+    - SIN ft.app() — esta vista es montada por dashboard_view.py.
 """
 
 import threading
+from datetime import datetime
+
 import flet as ft
 
-from src.services.bitacora_service import BitacoraService
+from src.services.bitacora_service import BitacoraService, ACCIONES_VALIDAS
+from src.ui.components.status_header import StatusHeader
+from src.ui.components.page_header import PageHeader
 
 _COLORES_ACCION = {
+    "LOGIN_FALLIDO": ("#FEE2E2", "#B91C1C"),
+    "ELIMINACION": ("#FEE2E2", "#B91C1C"),
+    "CAMBIO_ROL": ("#EDE9FE", "#6D28D9"),
+    "ANULACION_VENTA": ("#FEE2E2", "#B91C1C"),
+    "AJUSTE_STOCK": ("#DBEAFE", "#1D4ED8"),
+    "BAJA_STOCK": ("#FEF3C7", "#B45309"),
+    "CAMBIO_PRECIO": ("#DCFCE7", "#15803D"),
+    "FUSION_PRODUCTO": ("#FFEDD5", "#9A3412"),
+    # Colores para registros antiguos con acciones fuera del catálogo
     "LOGIN": ("#DBEAFE", "#1D4ED8"),
     "ENTRADA": ("#DCFCE7", "#15803D"),
     "SALIDA": ("#FEE2E2", "#B91C1C"),
@@ -25,6 +45,8 @@ _COLORES_ACCION = {
     "MOVIMIENTO": ("#DBEAFE", "#1D4ED8"),
     "PRODUCTO": ("#EDE9FE", "#6D28D9"),
     "BODEGA": ("#FCE7F3", "#BE185D"),
+    "CLIENTE": ("#FCE7F3", "#BE185D"),
+    "VENTA": ("#DCFCE7", "#15803D"),
 }
 
 
@@ -43,6 +65,71 @@ class _BitacoraView(ft.Container):
 
         self._registros: list[dict] = []
 
+        # ── Barra de estado
+        self._status_header = StatusHeader()
+
+        # ── SnackBar
+        self._snackbar = ft.SnackBar(content=ft.Text(""), show_close_icon=True)
+
+        # ── Filtros
+        self._buscar = ft.TextField(
+            expand=True,
+            hint_text="Buscar por usuario...",
+            prefix_icon=ft.Icons.SEARCH,
+            on_change=self._aplicar_filtros,
+        )
+
+        self._filtro = ft.Dropdown(
+            width=180,
+            label="Acción",
+            value="Todas",
+            options=[ft.DropdownOption(key="Todas", text="Todas")]
+            + [
+                ft.DropdownOption(key=a, text=a)
+                for a in ACCIONES_VALIDAS
+            ],
+            on_select=self._aplicar_filtros,
+        )
+
+        self._fecha_inicio = ft.TextField(
+            width=140,
+            label="Desde",
+            hint_text="DD/MM/AAAA",
+            on_change=self._aplicar_filtros,
+        )
+
+        self._fecha_fin = ft.TextField(
+            width=140,
+            label="Hasta",
+            hint_text="DD/MM/AAAA",
+            on_change=self._aplicar_filtros,
+        )
+
+        # ── Tabla
+        self._total = ft.Text(
+            "0 registros",
+            color="#4338CA",
+            weight=ft.FontWeight.BOLD,
+        )
+
+        self._tabla = ft.DataTable(
+            expand=True,
+            border=ft.border.all(1, "#eeeeee"),
+            border_radius=10,
+            vertical_lines=ft.BorderSide(1, "#eeeeee"),
+            horizontal_lines=ft.BorderSide(1, "#eeeeee"),
+            heading_row_color="#fafafa",
+            columns=[
+                ft.DataColumn(ft.Text("Fecha / Hora")),
+                ft.DataColumn(ft.Text("Usuario")),
+                ft.DataColumn(ft.Text("Rol")),
+                ft.DataColumn(ft.Text("Acción")),
+                ft.DataColumn(ft.Text("Entidad")),
+                ft.DataColumn(ft.Text("Detalle")),
+            ],
+            rows=[],
+        )
+
         self.content = ft.Column(
             expand=True,
             spacing=0,
@@ -55,11 +142,30 @@ class _BitacoraView(ft.Container):
 
     # ── Lifecycle ───────────────────────────────────────────────────────
     def did_mount(self):
+        self.page.overlay.append(self._snackbar)
+        self.page.update()
+        self._status_header.load(self.page)
         threading.Thread(target=self._cargar_bitacora, daemon=True).start()
 
-    def _cargar_bitacora(self):
-        resultado = BitacoraService.get_all()
-        self._registros = resultado["data"] if resultado["success"] else []
+    def _cargar_bitacora(
+        self,
+        accion: str | None = None,
+        fecha_inicio: str | None = None,
+        fecha_fin: str | None = None,
+    ):
+        resultado = BitacoraService.get_all(
+            accion=accion,
+            fecha_inicio=self._parse_fecha(fecha_inicio),
+            fecha_fin=self._parse_fecha(fecha_fin),
+        )
+
+        if resultado.get("success"):
+            self._registros = resultado.get("data", [])
+        else:
+            self._registros = []
+            if "Error" in resultado.get("message", ""):
+                self._mostrar_snack(resultado["message"], error=True)
+
         self._refrescar_tabla()
         self.page.update()
 
@@ -68,92 +174,10 @@ class _BitacoraView(ft.Container):
     # ======================================================
 
     def header_section(self):
-
-        return ft.Row(
-            alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
-            controls=[
-                ft.Column(
-                    spacing=2,
-                    controls=[
-                        ft.Text(
-                            "Bitácora",
-                            size=24,
-                            weight=ft.FontWeight.BOLD,
-                            color="#222",
-                        ),
-                        ft.Text(
-                            "Registro de actividades del sistema",
-                            size=12,
-                            color="grey",
-                        ),
-                    ],
-                ),
-                ft.Row(
-                    spacing=10,
-                    controls=[
-                        ft.Container(
-                            bgcolor="#E8FFF0",
-                            border_radius=20,
-                            padding=ft.padding.symmetric(
-                                horizontal=12,
-                                vertical=8,
-                            ),
-                            content=ft.Row(
-                                spacing=5,
-                                controls=[
-                                    ft.Icon(
-                                        ft.Icons.CHECK_CIRCLE,
-                                        color="green",
-                                        size=16,
-                                    ),
-                                    ft.Text(
-                                        "Online (Sincronizado)",
-                                        color="green",
-                                        size=12,
-                                        weight=ft.FontWeight.BOLD,
-                                    ),
-                                ],
-                            ),
-                        ),
-                        ft.Container(
-                            bgcolor="white",
-                            border_radius=15,
-                            padding=10,
-                            shadow=ft.BoxShadow(
-                                spread_radius=1,
-                                blur_radius=8,
-                                color=ft.Colors.BLACK12,
-                            ),
-                            content=ft.Row(
-                                spacing=10,
-                                controls=[
-                                    ft.CircleAvatar(
-                                        bgcolor="#b3001b",
-                                        content=ft.Text(
-                                            "A",
-                                            color="white",
-                                        ),
-                                    ),
-                                    ft.Column(
-                                        spacing=0,
-                                        controls=[
-                                            ft.Text(
-                                                "admin",
-                                                weight=ft.FontWeight.BOLD,
-                                            ),
-                                            ft.Text(
-                                                "Administrador",
-                                                size=11,
-                                                color="grey",
-                                            ),
-                                        ],
-                                    ),
-                                ],
-                            ),
-                        ),
-                    ],
-                ),
-            ],
+        return PageHeader(
+            title="Bitácora",
+            subtitle="Registro de actividades del sistema",
+            status_control=self._status_header.control,
         )
 
     # ======================================================
@@ -161,63 +185,6 @@ class _BitacoraView(ft.Container):
     # ======================================================
 
     def tabla_section(self):
-
-        self.buscar = ft.TextField(
-            expand=True,
-            hint_text="Buscar por usuario...",
-            prefix_icon=ft.Icons.SEARCH,
-            on_change=self._aplicar_filtros,
-        )
-
-        # 1. Creamos el Dropdown SIN el on_change adentro
-        self.filtro = ft.Dropdown(
-            width=180,
-            label="Acción",
-            value="Todas",
-            options=[
-                ft.DropdownOption("Todas"),
-                ft.DropdownOption("LOGIN"),
-                ft.DropdownOption("ENTRADA"),
-                ft.DropdownOption("SALIDA"),
-                ft.DropdownOption("BAJA"),
-                ft.DropdownOption("MOVIMIENTO"),
-                ft.DropdownOption("PRODUCTO"),
-                ft.DropdownOption("BODEGA"),
-            ],
-        )
-
-        # 2. Asignamos la función on_change aquí afuera
-        self.filtro.on_change = self._aplicar_filtros
-
-        self.total = ft.Text(
-            "0 registros",
-            color="#4338CA",
-            weight=ft.FontWeight.BOLD,
-        )
-
-        self.total = ft.Text(
-            "0 registros",
-            color="#4338CA",
-            weight=ft.FontWeight.BOLD,
-        )
-
-        self.tabla = ft.DataTable(
-            expand=True,
-            border=ft.border.all(1, "#eeeeee"),
-            border_radius=10,
-            vertical_lines=ft.BorderSide(1, "#eeeeee"),
-            horizontal_lines=ft.BorderSide(1, "#eeeeee"),
-            heading_row_color="#fafafa",
-            columns=[
-                ft.DataColumn(ft.Text("Fecha / Hora")),
-                ft.DataColumn(ft.Text("Usuario")),
-                ft.DataColumn(ft.Text("Rol")),
-                ft.DataColumn(ft.Text("Acción")),
-                ft.DataColumn(ft.Text("Detalle")),
-            ],
-            rows=[],
-        )
-
         return ft.Container(
             expand=True,
             bgcolor="white",
@@ -262,7 +229,7 @@ class _BitacoraView(ft.Container):
                                             color="#4338CA",
                                             size=16,
                                         ),
-                                        self.total,
+                                        self._total,
                                     ],
                                 ),
                             ),
@@ -271,12 +238,14 @@ class _BitacoraView(ft.Container):
                     ft.Row(
                         spacing=10,
                         controls=[
-                            self.buscar,
-                            self.filtro,
+                            self._buscar,
+                            self._filtro,
+                            self._fecha_inicio,
+                            self._fecha_fin,
                         ],
                     ),
                     ft.Divider(),
-                    self.tabla,
+                    self._tabla,
                 ],
             ),
         )
@@ -286,28 +255,29 @@ class _BitacoraView(ft.Container):
     # ======================================================
 
     def _refrescar_tabla(self):
-        self.tabla.rows = [self._crear_fila(r) for r in self._registros]
-        self.total.value = f"{len(self.tabla.rows)} registros"
+        texto = (self._buscar.value or "").lower()
+
+        self._tabla.rows = [
+            self._crear_fila(r)
+            for r in self._registros
+            if texto in (r.get("usuario") or "").lower()
+        ]
+        self._total.value = f"{len(self._tabla.rows)} registros"
 
     def _crear_fila(self, registro: dict):
-
         fecha = registro.get("fecha")
-        fecha_str = (
-            fecha.strftime("%d/%m/%Y %H:%M")
-            if hasattr(fecha, "strftime")
-            else str(fecha or "—")
-        )
+        if isinstance(fecha, str):
+            fecha_str = fecha
+        elif hasattr(fecha, "strftime"):
+            fecha_str = fecha.strftime("%d/%m/%Y %H:%M")
+        else:
+            fecha_str = str(fecha or "—")
 
         usuario = registro.get("usuario") or "—"
         rol = (registro.get("rol") or "—").capitalize()
         accion = registro.get("accion") or "—"
-
-        detalles = registro.get("detalles") or {}
-        descripcion = (
-            detalles.get("descripcion", "")
-            if isinstance(detalles, dict)
-            else str(detalles)
-        )
+        entidad = registro.get("entidad") or "—"
+        detalle = registro.get("detalle") or ""
 
         fondo, texto = _COLORES_ACCION.get(accion, ("#F3F4F6", "#374151"))
 
@@ -330,27 +300,39 @@ class _BitacoraView(ft.Container):
                         ),
                     )
                 ),
-                ft.DataCell(ft.Text(descripcion)),
-            ],
+                ft.DataCell(ft.Text(entidad)),
+                ft.DataCell(ft.Text(detalle)),
+            ]
         )
 
     # ======================================================
-    # FILTROS (búsqueda + acción, combinados)
+    # FILTROS (búsqueda + acción + rango de fecha)
     # ======================================================
 
     def _aplicar_filtros(self, e=None):
+        accion = self._filtro.value
+        accion = accion if accion and accion != "Todas" else None
 
-        texto = (self.buscar.value or "").lower()
-        accion_sel = self.filtro.value
+        self._cargar_bitacora(
+            accion=accion,
+            fecha_inicio=self._fecha_inicio.value,
+            fecha_fin=self._fecha_fin.value,
+        )
 
-        for fila in self.tabla.rows:
-            usuario = fila.cells[1].content.value.lower()
-            accion_fila = fila.cells[3].content.content.value
+    def _parse_fecha(self, s: str):
+        if not s:
+            return None
+        try:
+            return datetime.strptime(s, "%d/%m/%Y").date()
+        except ValueError:
+            return None
 
-            visible = texto in usuario
-            if accion_sel and accion_sel != "Todas":
-                visible = visible and accion_fila == accion_sel
+    # ======================================================
+    # FEEDBACK
+    # ======================================================
 
-            fila.visible = visible
-
-        self.update()
+    def _mostrar_snack(self, mensaje: str, error: bool = False):
+        self._snackbar.content = ft.Text(mensaje, color="white")
+        self._snackbar.bgcolor = "#d32f2f" if error else "#388e3c"
+        self._snackbar.open = True
+        self.page.update()

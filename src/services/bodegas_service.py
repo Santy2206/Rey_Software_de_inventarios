@@ -12,10 +12,30 @@ El id se genera automáticamente en la base de datos (DEFAULT gen_random_uuid())
 así que nunca lo mandamos nosotros al hacer INSERT.
 
 Tabla:
-    bodegas (id, nombre, tipo, created_at, dirty, synced_at)
+    bodegas (id, nombre, ubicacion, creado_en)
 """
 
 from src.core.local_db import run_query
+from src.services.auth_service import AuthService
+from src.services.bitacora_service import BitacoraService
+
+
+def _registrar_bitacora_bodegas(
+    accion: str, entidad_id: str, detalle: str
+):
+    """Registra en bitácora sin afectar la operación principal."""
+    try:
+        usuario_id = AuthService.get_usuario_id()
+        if usuario_id:
+            BitacoraService.registrar(
+                usuario_id,
+                accion,
+                entidad="bodega",
+                entidad_id=entidad_id,
+                detalle=detalle,
+            )
+    except Exception as e:
+        print(f" Error al registrar bitácora de bodega: {e}")
 
 
 class BodegasService:
@@ -27,8 +47,10 @@ class BodegasService:
         try:
             # 'ubicacion AS tipo' — bodegas_view.py espera la llave "tipo"
             data = run_query(
-                "SELECT id, nombre, ubicacion AS tipo, creado_en "
-                "FROM bodegas ORDER BY nombre"
+                "SELECT id, nombre, ubicacion AS tipo, es_principal, "
+                "cuentas_elisa, orden, descripcion, creado_en "
+                "FROM bodegas "
+                "ORDER BY COALESCE(orden, 9999), es_principal DESC, nombre"
             )
 
             if not data:
@@ -76,7 +98,14 @@ class BodegasService:
             return {"success": False, "message": f"Error al buscar bodega: {error_msg}"}
 
     @staticmethod
-    def create(nombre: str, tipo: str):
+    def create(
+        nombre: str,
+        tipo: str,
+        es_principal: bool = False,
+        cuentas_elisa: str | None = None,
+        orden: int | None = None,
+        descripcion: str | None = None,
+    ):
         """
         Crea una nueva bodega.
 
@@ -88,13 +117,25 @@ class BodegasService:
         """
         print(f"--- Creando bodega: {nombre} ({tipo}) ---")
         try:
+            # Tipo Fragancias → siempre es bodega principal
+            if (tipo or "").strip().upper() == "FRAGANCIAS":
+                es_principal = True
+            if orden is None and cuentas_elisa:
+                import re
+                m = re.search(r"\d{6,}", str(cuentas_elisa))
+                if m:
+                    orden = int(m.group(0)) % 1000  # 41353804 → 804
+            if descripcion:
+                descripcion = descripcion.strip().title()
             bodega = run_query(
                 """
-                INSERT INTO bodegas (nombre, ubicacion)
-                VALUES (%s, %s)
+                INSERT INTO bodegas
+                    (nombre, ubicacion, es_principal, cuentas_elisa,
+                     orden, descripcion)
+                VALUES (%s, %s, %s, %s, %s, %s)
                 RETURNING *
                 """,
-                (nombre, tipo),
+                (nombre, tipo, es_principal, cuentas_elisa, orden, descripcion),
                 fetch_one=True,
             )
 
@@ -114,7 +155,15 @@ class BodegasService:
             return {"success": False, "message": f"Error al crear bodega: {error_msg}"}
 
     @staticmethod
-    def update(bodega_id: str, nombre: str, tipo: str):
+    def update(
+        bodega_id: str,
+        nombre: str,
+        tipo: str,
+        es_principal: bool | None = None,
+        cuentas_elisa: str | None = None,
+        orden: int | None = None,
+        descripcion: str | None = None,
+    ):
         """
         Actualiza el nombre y/o tipo de una bodega existente.
 
@@ -125,14 +174,28 @@ class BodegasService:
         """
         print(f"--- Actualizando bodega id: {bodega_id} ---")
         try:
+            # Tipo Fragancias → siempre es bodega principal
+            if (tipo or "").strip().upper() == "FRAGANCIAS":
+                es_principal = True
+            if descripcion:
+                descripcion = descripcion.strip().title()
             bodega = run_query(
                 """
                 UPDATE bodegas
-                SET nombre = %s, ubicacion = %s
+                SET nombre = %s,
+                    ubicacion = %s,
+                    es_principal = COALESCE(%s, es_principal),
+                    cuentas_elisa = COALESCE(%s, cuentas_elisa),
+                    orden = COALESCE(%s, orden),
+                    descripcion = COALESCE(%s, descripcion),
+                    dirty = true
                 WHERE id = %s
                 RETURNING *
                 """,
-                (nombre, tipo, bodega_id),
+                (
+                    nombre, tipo, es_principal, cuentas_elisa, orden,
+                    descripcion, bodega_id,
+                ),
                 fetch_one=True,
             )
 
@@ -158,15 +221,116 @@ class BodegasService:
             }
 
     @staticmethod
+    def duplicar(bodega_id: str, nuevo_nombre: str | None = None):
+        """
+        Duplica una bodega y todos los productos que contiene.
+
+        Parámetros:
+            bodega_id:    id de la bodega a duplicar.
+            nuevo_nombre: nombre para la nueva bodega; si es None se usa
+                          "Copia de <nombre original>".
+
+        Retorna:
+            dict: {success, message, data: {"bodega": ..., "productos_copiados": n}}
+        """
+        print(f"--- Duplicando bodega id: {bodega_id} ---")
+        try:
+            from src.core.local_db import get_cursor
+
+            original = BodegasService.get_one(bodega_id)
+            if not original.get("success"):
+                return original
+
+            bodega = original["data"]
+            nombre_nueva = (nuevo_nombre or "").strip() or f"Copia de {bodega['nombre']}"
+            tipo = bodega.get("tipo", "")
+
+            with get_cursor() as cur:
+                # Crear la nueva bodega
+                cur.execute(
+                    """
+                    INSERT INTO bodegas (nombre, ubicacion)
+                    VALUES (%s, %s)
+                    RETURNING *
+                    """,
+                    (nombre_nueva, tipo),
+                )
+                nueva = cur.fetchone()
+                if not nueva:
+                    return {
+                        "success": False,
+                        "message": "No se pudo crear la nueva bodega",
+                    }
+                nueva_id = nueva["id"]
+
+                # Copiar los productos de la bodega original a la nueva
+                cur.execute(
+                    """
+                    INSERT INTO productos
+                        (bodega_id, nombre, descripcion, sku, codigo,
+                         precio, stock_actual, dirty)
+                    SELECT
+                        %s, nombre, descripcion, sku, codigo,
+                        precio, stock_actual, TRUE
+                    FROM productos
+                    WHERE bodega_id = %s
+                    """,
+                    (nueva_id, bodega_id),
+                )
+                productos_copiados = cur.rowcount or 0
+
+            print(
+                f" Bodega duplicada con éxito ({productos_copiados} productos)"
+            )
+            return {
+                "success": True,
+                "message": (
+                    f"Bodega '{nombre_nueva}' creada con "
+                    f"{productos_copiados} productos copiados"
+                ),
+                "data": {
+                    "bodega": nueva,
+                    "productos_copiados": productos_copiados,
+                },
+            }
+
+        except Exception as e:
+            error_msg = str(e)
+            print(f" Error en BodegasService.duplicar: {error_msg}")
+            return {
+                "success": False,
+                "message": f"Error al duplicar bodega: {error_msg}",
+            }
+
+    @staticmethod
     def delete(bodega_id: str):
         """
         Elimina una bodega por su ID.
+
+        No permite eliminar una bodega que tenga productos asociados,
+        ya que la base de datos tiene una foreign key RESTRICT y
+        productos.bodega_id es NOT NULL.
 
         Parámetros:
             bodega_id: el id de la bodega a eliminar
         """
         print(f"--- Eliminando bodega id: {bodega_id} ---")
         try:
+            # Verificar si hay productos asociados
+            productos = run_query(
+                "SELECT COUNT(*) AS n FROM productos WHERE bodega_id = %s",
+                (bodega_id,),
+                fetch_one=True,
+            )
+            if productos and productos["n"] > 0:
+                mensaje = (
+                    f"No se puede eliminar la bodega porque tiene "
+                    f"{productos['n']} producto(s) asociado(s). "
+                    f"Elimine o mueva esos productos primero."
+                )
+                print(f" {mensaje}")
+                return {"success": False, "message": mensaje}
+
             eliminado = run_query(
                 "DELETE FROM bodegas WHERE id = %s RETURNING id",
                 (bodega_id,),
@@ -178,6 +342,12 @@ class BodegasService:
                     "success": False,
                     "message": "Bodega no encontrada para eliminar",
                 }
+
+            _registrar_bitacora_bodegas(
+                "ELIMINACION",
+                entidad_id=bodega_id,
+                detalle="Bodega eliminada",
+            )
 
             print(f" Bodega eliminada con éxito")
             return {"success": True, "message": "Bodega eliminada con éxito"}

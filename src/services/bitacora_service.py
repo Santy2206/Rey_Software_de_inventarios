@@ -1,157 +1,300 @@
-from datetime import datetime
+"""
+Servicio de Bitácora (auditoría).
 
-# --- Lógica de Consola (CLI) opcional ---
-usuarios_nuevos = []
-contrasena_nueva = []
-ventas = []
-clientes = []
-bodegas = []
-descripciones = []
+Registra y consulta acciones sensibles del sistema en la tabla 'bitacora'.
 
+Esquema real verificado (local y Supabase, idéntico):
+    bitacora (
+        id          uuid          DEFAULT gen_random_uuid(),
+        usuario_id  uuid          NOT NULL,
+        accion      text          NOT NULL,
+        entidad     text          NULL,
+        entidad_id  text          NULL,
+        detalle     text          NULL,
+        detalles    jsonb         NULL,   -- legado
+        fecha       timestamptz   DEFAULT CURRENT_TIMESTAMP,
+        dirty       boolean       DEFAULT true,
+        synced_at   timestamptz
+    )
 
-def registrar_descripcion():
-    while True:
-        try:
-            descrip = str(input("Señor usuario: anexe una descripción breve: "))
-            descripciones.append(descrip)
-            print("Señor usuario, la descripción fue guardada exitosamente.")
-            break
-        except ValueError:
-            print(
-                "Señor usuario, su descripción no cumple con los parámetros establecidos."
-            )
-
-
-def menu_usuarios():
-    print("Ingrese la opción deseada:")
-    print("1. Usuarios registrados")
-    print("2. Registrar usuario")
-
-    try:
-        opcion = int(input("Ingrese la opción deseada: "))
-        if opcion == 1:
-            for usr in usuarios_nuevos:
-                print("//// Usuarios registrados ////")
-                print("=", usr)
-        elif opcion == 2:
-            nuevo_usuario = str(input("Ingrese el nuevo usuario: "))
-            usuarios_nuevos.append(nuevo_usuario)
-            while True:
-                contrasena = input("Ingrese una contraseña alfanumérica: ")
-                if contrasena.isalnum():
-                    contrasena_nueva.append(contrasena)
-                    print("¡Contraseña alfanumérica registrada con éxito!")
-                    break
-                else:
-                    print("La contraseña no es alfanumérica, vuelva a intentarlo.")
-        else:
-            print("No existe la opción deseada.")
-    except ValueError:
-        print("La opción ingresada no es válida.")
+La columna JSONB 'detalles' se conserva solo por compatibilidad con
+registros antiguos; los registros nuevos usan las columnas
+'entidad', 'entidad_id' y 'detalle'.
 
 
-def obtener_fecha_hora():
-    fecha_final, hora_final = "", ""
-    while True:
-        fecha_input = input("Ingrese la fecha (DD/MM/AAAA): ")
-        try:
-            fecha_validada = datetime.strptime(fecha_input, "%d/%m/%Y").date()
-            fecha_final = fecha_validada.strftime("%d/%m/%Y")
-            break
-        except ValueError:
-            print("Fecha incorrecta. Use el formato Día/Mes/Año.")
+Qué se registra (catálogo cerrado ACCIONES_VALIDAS):
+    LOGIN_FALLIDO, ELIMINACION, CAMBIO_ROL, ANULACION_VENTA,
+    AJUSTE_STOCK, BAJA_STOCK, CAMBIO_PRECIO
 
-    while True:
-        hora_input = input("Ingrese la hora (HH:MM): ")
-        try:
-            hora_validada = datetime.strptime(hora_input, "%H:%M").time()
-            hora_final = hora_validada.strftime("%H:%M")
-            break
-        except ValueError:
-            print("Hora incorrecta. Use el formato de 24 horas.")
+Qué NO se registra:
+    - Entradas/salidas normales de inventario (eso ya vive en 'movimientos').
+    - Lecturas o consultas.
+    - Ediciones rutinarias de campos no sensibles.
+    - Snapshots completos antes/después — solo un 'detalle' de texto corto
+      (máx. ~200 caracteres).
 
-    return [fecha_final, hora_final]
+Mismo contrato que el resto de servicios:
+  - Cada función usa try/except
+  - Siempre retorna {'success': bool, 'message': str, 'data': ...}
+  - SIN importaciones de Flet — solo lógica pura
 
+Importante:
+    El registro de bitácora NUNCA debe ser bloqueante. Si falla, se
+    loguea el error pero no se propaga, para que la operación original
+    no se vea afectada.
 
-def menu_acciones():
-    print("Ingrese la opción deseada:")
-    print("1. Agregar ventas")
-    print("2. Historial de ventas")
-    print("3. Ingresar clientes")
-    print("4. Historial de clientes")
-    print("5. Ingresar bodegas")
-    print("6. Historial de bodegas")
+Pendiente (fuera de alcance de esta implementación):
+    Instrumentar llamadas a registrar() desde productos_service,
+    ventas_service, auth_service, etc. Cada punto de instrumentación
+    debe ser su propio prompt scopeado.
+"""
 
-    try:
-        opcion = int(input("Ingrese la opción deseada: "))
+from datetime import date
 
-        if opcion == 1:
-            vent = str(input("Ingrese el producto vendido: "))
-            ventas.append(vent)
-            print("Venta agregada.")
-
-        elif opcion == 2:
-            print("/////////// Historial de ventas ////////////")
-            for v in ventas:
-                print("=", v)
-
-        elif opcion == 3:
-            cly = str(input("Ingrese el cliente que va a comprar: "))
-            clientes.append(cly)
-            print("Cliente agregado.")
-
-        elif opcion == 4:
-            print("//// Historial de Clientes ////")
-            for c in clientes:
-                print("=", c)
-
-        elif opcion == 5:
-            try:
-                bod = int(input("Ingrese el número de bodegas que desea ingresar: "))
-                bodegas.append(bod)
-            except ValueError:
-                print("El número de bodegas no es válido.")
-
-        elif opcion == 6:
-            print("/// Historial de Bodegas ////")
-            for b in bodegas:
-                print("=", b)
-        else:
-            print("Opción no válida.")
-
-    except ValueError:
-        print("La opción no es válida.")
+from src.core.local_db import run_query
 
 
-# --- Servicio de Bitácora para la App (Flet/DB) ---
+# Catálogo cerrado de acciones auditables.
+ACCIONES_VALIDAS = [
+    "LOGIN_FALLIDO",
+    "ELIMINACION",
+    "CAMBIO_ROL",
+    "ANULACION_VENTA",
+    "AJUSTE_STOCK",
+    "BAJA_STOCK",
+    "CAMBIO_PRECIO",
+    "FUSION_PRODUCTO",
+]
+
+_MAX_DETALLE = 200
+
+
 class BitacoraService:
-    """Clase principal de la bitácora a usar en la app."""
-
-    def __init__(self, bitacora_repository=None):
-        self.bitacora_repository = bitacora_repository
-        self.registros = []
-
-    def registrar_evento(self, evento):
-        # Si existe repositorio local DB se registra allí
-        if self.bitacora_repository:
-            self.bitacora_repository.registrar_evento(evento)
-
-        # También lo guardamos en memoria local como respaldo/prueba
-        self.registros.append(evento)
-        print("Registro guardado correctamente")
-
-    def mostrar_bitacora(self):
-        for registro in self.registros:
-            print("----------------------")
-            print(f"Usuario: {registro.get('usuario', 'N/A')}")
-            print(f"Acción: {registro.get('accion', 'N/A')}")
-            print(f"Descripción: {registro.get('descripcion', 'N/A')}")
-            print("----------------------")
+    """Auditoría del sistema. Sin dependencias de Flet."""
 
     @staticmethod
-    def get_all():
+    def get_all(
+        usuario_id: str = None,
+        accion: str = None,
+        fecha_inicio: date = None,
+        fecha_fin: date = None,
+    ):
         """
-        Método simulado para que bitacora_view.py no falle al arrancar.
-        Deberías reemplazar esto con un `run_query` hacia tu BD.
+        Trae el historial de bitácora, más reciente primero.
+
+        Parámetros opcionales de filtro:
+            usuario_id:   id del usuario que realizó la acción
+            accion:       uno de ACCIONES_VALIDAS
+            fecha_inicio: fecha mínima (date)
+            fecha_fin:    fecha máxima (date)
+
+        Retorna:
+            dict: contrato estándar; 'data' es la lista de registros.
         """
-        return {"success": True, "message": "Datos obtenidos", "data": []}
+        print("--- Trayendo bitácora ---")
+        try:
+            condiciones = []
+            parametros = []
+
+            if usuario_id:
+                condiciones.append("b.usuario_id = %s")
+                parametros.append(usuario_id)
+            if accion:
+                condiciones.append("b.accion = %s")
+                parametros.append(accion)
+            if fecha_inicio:
+                condiciones.append("b.fecha::date >= %s")
+                parametros.append(fecha_inicio)
+            if fecha_fin:
+                condiciones.append("b.fecha::date <= %s")
+                parametros.append(fecha_fin)
+
+            where = ""
+            if condiciones:
+                where = "WHERE " + " AND ".join(condiciones)
+
+            data = run_query(
+                f"""
+                SELECT b.id,
+                       b.usuario_id,
+                       b.accion,
+                       b.entidad,
+                       b.entidad_id,
+                       COALESCE(
+                           b.detalle,
+                           b.detalles->>'detalle',
+                           b.detalles->>'descripcion'
+                       ) AS detalle,
+                       b.fecha,
+                       u.name AS usuario,
+                       u.rol
+                FROM bitacora b
+                LEFT JOIN usuarios u ON b.usuario_id = u.id
+                {where}
+                ORDER BY b.fecha DESC
+                """,
+                tuple(parametros) if parametros else (),
+            )
+
+            if not data:
+                return {
+                    "success": True,
+                    "message": "No hay registros en la bitácora",
+                    "data": [],
+                }
+
+            print(f" Se encontraron {len(data)} registro(s) en bitácora")
+            return {
+                "success": True,
+                "message": "Bitácora obtenida",
+                "data": data,
+            }
+
+        except Exception as e:
+            error_msg = str(e)
+            print(f" Error en BitacoraService.get_all: {error_msg}")
+            return {
+                "success": False,
+                "message": f"Error al obtener bitácora: {error_msg}",
+                "data": [],
+            }
+
+    @staticmethod
+    def get_by_entidad(entidad: str, entidad_id: str):
+        """
+        Trae el historial de bitácora de un registro específico
+        (ej. todos los cambios de un producto), más reciente primero.
+
+        Parámetros:
+            entidad:    nombre de la entidad, ej: "producto", "venta"
+            entidad_id: id del registro afectado
+
+        Retorna:
+            dict: contrato estándar; 'data' es la lista de registros.
+        """
+        print(f"--- Trayendo bitácora de {entidad} {entidad_id} ---")
+        try:
+            data = run_query(
+                """
+                SELECT b.id,
+                       b.usuario_id,
+                       b.accion,
+                       b.entidad,
+                       b.entidad_id,
+                       COALESCE(
+                           b.detalle,
+                           b.detalles->>'detalle',
+                           b.detalles->>'descripcion'
+                       ) AS detalle,
+                       b.fecha,
+                       u.name AS usuario,
+                       u.rol
+                FROM bitacora b
+                LEFT JOIN usuarios u ON b.usuario_id = u.id
+                WHERE b.entidad = %s
+                  AND b.entidad_id = %s
+                ORDER BY b.fecha DESC
+                """,
+                (entidad, str(entidad_id)),
+            )
+
+            if not data:
+                return {
+                    "success": True,
+                    "message": "No hay registros para esa entidad",
+                    "data": [],
+                }
+
+            return {
+                "success": True,
+                "message": "Bitácora de la entidad obtenida",
+                "data": data,
+            }
+
+        except Exception as e:
+            error_msg = str(e)
+            print(f" Error en BitacoraService.get_by_entidad: {error_msg}")
+            return {
+                "success": False,
+                "message": f"Error al obtener bitácora: {error_msg}",
+                "data": [],
+            }
+
+    @staticmethod
+    def registrar(
+        usuario_id: str,
+        accion: str,
+        entidad: str = None,
+        entidad_id: str = None,
+        detalle: str = None,
+    ):
+        """
+        Inserta un nuevo registro de auditoría.
+
+        Parámetros:
+            usuario_id: id de la tabla 'usuarios' de quien realiza la
+                        acción. Debe recibirse como parámetro — este
+                        servicio no lo inventa ni lo asume.
+            accion:     debe estar dentro de ACCIONES_VALIDAS.
+            entidad:    nombre de la entidad afectada, ej: "producto".
+            entidad_id: id del registro afectado (opcional).
+            detalle:    texto corto (se trunca a ~200 caracteres).
+
+        Retorna:
+            dict: contrato estándar; 'data' contiene el registro insertado.
+
+        Nota:
+            Nunca lanza excepción hacia el llamador: un fallo aquí no
+            debe afectar la operación auditada.
+        """
+        print(f"--- Registrando en bitácora: {accion} ---")
+        try:
+            if accion not in ACCIONES_VALIDAS:
+                print(f" Acción no auditable, se omite: {accion}")
+                return {
+                    "success": False,
+                    "message": (
+                        f"Acción '{accion}' no está en el catálogo "
+                        "de acciones auditables"
+                    ),
+                }
+
+            detalle_corto = (detalle or "")[:_MAX_DETALLE]
+
+            registro = run_query(
+                """
+                INSERT INTO bitacora
+                    (usuario_id, accion, entidad, entidad_id, detalle)
+                VALUES (%s, %s, %s, %s, %s)
+                RETURNING *
+                """,
+                (
+                    usuario_id,
+                    accion,
+                    entidad,
+                    str(entidad_id) if entidad_id else None,
+                    detalle_corto,
+                ),
+                fetch_one=True,
+            )
+
+            if not registro:
+                return {
+                    "success": False,
+                    "message": "No se pudo registrar la bitácora",
+                }
+
+            print(f" Bitácora registrada: {accion}")
+            return {
+                "success": True,
+                "message": "Bitácora registrada",
+                "data": registro,
+            }
+
+        except Exception as e:
+            error_msg = str(e)
+            print(f" Error en BitacoraService.registrar: {error_msg}")
+            return {
+                "success": False,
+                "message": f"Error al registrar bitácora: {error_msg}",
+            }
