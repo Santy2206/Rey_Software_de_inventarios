@@ -49,6 +49,13 @@ htmlcov/
 # Flet específico (builds y assets generados)
 assets/build/
 assets/dist/
+assets/downloads/
+.flet/
+
+# Instalador: ejecutable empaquetado, PostgreSQL installer y .env de ejemplo copiado
+installer/source/REY_Inventarios/
+installer/source/postgresql-win-x64.exe
+installer/source/.env
 
 # SQLite (si usas DB local)
 *.sqlite3
