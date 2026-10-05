@@ -32,8 +32,8 @@ flet pack main.py ^
   --add-data "assets:assets" ^
   --onedir ^
   --pyinstaller-build-args="--collect-data=flet_web" ^
-  --product-name "REY Inventarios" ^
-  --file-description "Software de inventarios multibodega" ^
+  --product-name "REY Software de Inventarios" ^
+  --file-description "REY Software de Inventarios" ^
   --product-version 2.0.0 ^
   --file-version 2.0.0.0 ^
   --company-name "SENA ADSO Ficha 3186627" ^
