@@ -62,10 +62,16 @@ def _wait_process_alive(process: subprocess.Popen, seconds: float = 3.5) -> bool
 
 
 def _launch_app(mode: str) -> subprocess.Popen:
-    main_script = _PROJECT_ROOT / "main.py"
-    log_file = _PROJECT_ROOT / f".tmp_launch_{mode}.log"
+    if getattr(sys, "frozen", False):
+        # Ejecutable empaquetado (REY.exe): se relanza el mismo .exe.
+        exe_dir = Path(sys.executable).resolve().parent
+        log_file = exe_dir / f".tmp_launch_{mode}.log"
+        args = [sys.executable]
+    else:
+        main_script = _PROJECT_ROOT / "main.py"
+        log_file = _PROJECT_ROOT / f".tmp_launch_{mode}.log"
+        args = [_pythonw_exe(), str(main_script)]
 
-    args = [_pythonw_exe(), str(main_script)]
     if mode == "web":
         args.append("--web")
     else:
@@ -91,7 +97,7 @@ def _launch_app(mode: str) -> subprocess.Popen:
     try:
         return subprocess.Popen(
             args,
-            cwd=str(_PROJECT_ROOT),
+            cwd=str(log_file.parent),
             env=env,
             startupinfo=startupinfo,
             creationflags=creationflags,

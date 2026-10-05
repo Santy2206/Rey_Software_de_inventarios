@@ -127,6 +127,7 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
+
 4. Crear la base de datos local en PostgreSQL:
 
 ```sql
@@ -169,6 +170,12 @@ python main.py --web
 Desde la interfaz se puede cambiar entre modos con el botón "Abrir en navegador" o "Abrir en escritorio". La sesión se mantiene al cambiar de modo.
 
 Para sincronizar los datos locales con Supabase, usar el botón "Sincronizar ahora" en la barra de estado. Si hay registros pendientes, el badge mostrará "Pendientes (N)" en naranja.
+
+## Ejecutable para Windows
+
+Doble clic en `deploy\windows\construir_ejecutable.bat`. Genera `dist\REY_Inventarios\REY_Inventarios.exe` y el paquete `dist\REY_Inventarios_v2.0_Windows.zip` (aplicación + `crear_base_datos.bat` + `instalar_rey.bat` + `LEAME.txt`) listo para subir a Google Drive.
+
+Usuarios de prueba creados por `deploy/db/02_seed.sql`: `admin / admin123` y `empleado / empleado123`. Ver `LEAME.txt` para el paso a paso de instalación.
 
 ## Roles
 
