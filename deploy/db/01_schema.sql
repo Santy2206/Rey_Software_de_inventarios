@@ -3,6 +3,11 @@
 -- Generado a partir de supabase_schema.sql, sin los permisos propios de
 -- Supabase (roles anon/authenticated) para usarse en el PostgreSQL local
 -- del equipo del cliente.
+--
+-- IDEMPOTENTE: se puede ejecutar tanto en una base de datos nueva como en
+-- una que ya tiene datos (instalacion/actualizacion) sin borrar nada.
+-- Las tablas usan CREATE TABLE IF NOT EXISTS y las restricciones se crean
+-- dentro de un bloque que ignora el error si ya existen.
 -- =====================================================================
 --
 -- Basado en el volcado (pg_dump) de la base de datos del proyecto
@@ -27,7 +32,7 @@ SET default_table_access_method = heap;
 --
 -- Name: bitacora; Type: TABLE; Schema: public; Owner: -
 --
-CREATE TABLE public.bitacora (
+CREATE TABLE IF NOT EXISTS public.bitacora (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     usuario_id uuid NOT NULL,
     accion text NOT NULL,
@@ -42,7 +47,7 @@ CREATE TABLE public.bitacora (
 --
 -- Name: bodegas; Type: TABLE; Schema: public; Owner: -
 --
-CREATE TABLE public.bodegas (
+CREATE TABLE IF NOT EXISTS public.bodegas (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     nombre character varying(100) NOT NULL,
     ubicacion text,
@@ -57,7 +62,7 @@ CREATE TABLE public.bodegas (
 --
 -- Name: clientes; Type: TABLE; Schema: public; Owner: -
 --
-CREATE TABLE public.clientes (
+CREATE TABLE IF NOT EXISTS public.clientes (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     nombre character varying(100) NOT NULL,
     telefono character varying(20),
@@ -72,7 +77,7 @@ CREATE TABLE public.clientes (
 --
 -- Name: movimientos; Type: TABLE; Schema: public; Owner: -
 --
-CREATE TABLE public.movimientos (
+CREATE TABLE IF NOT EXISTS public.movimientos (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     producto_id uuid NOT NULL,
     bodega_id uuid NOT NULL,
@@ -97,7 +102,7 @@ CREATE TABLE public.movimientos (
 --
 -- Name: productos; Type: TABLE; Schema: public; Owner: -
 --
-CREATE TABLE public.productos (
+CREATE TABLE IF NOT EXISTS public.productos (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     bodega_id uuid NOT NULL,
     nombre character varying(100) NOT NULL,
@@ -113,7 +118,7 @@ CREATE TABLE public.productos (
 --
 -- Name: usuarios; Type: TABLE; Schema: public; Owner: -
 --
-CREATE TABLE public.usuarios (
+CREATE TABLE IF NOT EXISTS public.usuarios (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     name character varying(100) CONSTRAINT usuarios_nombre_not_null NOT NULL,
     email character varying(100) NOT NULL,
@@ -133,7 +138,7 @@ CREATE TABLE public.usuarios (
 --
 -- Name: venta_detalle; Type: TABLE; Schema: public; Owner: -
 --
-CREATE TABLE public.venta_detalle (
+CREATE TABLE IF NOT EXISTS public.venta_detalle (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     venta_id uuid NOT NULL,
     producto_id uuid NOT NULL,
@@ -147,7 +152,7 @@ CREATE TABLE public.venta_detalle (
 --
 -- Name: ventas; Type: TABLE; Schema: public; Owner: -
 --
-CREATE TABLE public.ventas (
+CREATE TABLE IF NOT EXISTS public.ventas (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     cliente_id uuid NOT NULL,
     usuario_id uuid NOT NULL,
@@ -163,7 +168,7 @@ CREATE TABLE public.ventas (
 -- Tabla de aterrizaje de archivos .xls de ventas Elisa (Fase 1).
 -- Las 7 columnas del Excel se guardan en texto original sin transformar.
 --
-CREATE TABLE public.ventas_import_raw (
+CREATE TABLE IF NOT EXISTS public.ventas_import_raw (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     lote_id uuid NOT NULL,
     fila_origen integer NOT NULL,
@@ -198,163 +203,121 @@ CREATE TABLE public.ventas_import_raw (
     es_duplicado_omitido boolean DEFAULT false NOT NULL,
     creado_en timestamp with time zone DEFAULT CURRENT_TIMESTAMP
 );
---
--- Name: bitacora bitacora_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-ALTER TABLE ONLY public.bitacora
-ADD CONSTRAINT bitacora_pkey PRIMARY KEY (id);
---
--- Name: bodegas bodegas_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-ALTER TABLE ONLY public.bodegas
-ADD CONSTRAINT bodegas_pkey PRIMARY KEY (id);
---
--- Name: clientes clientes_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-ALTER TABLE ONLY public.clientes
-ADD CONSTRAINT clientes_pkey PRIMARY KEY (id);
---
--- Name: movimientos movimientos_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-ALTER TABLE ONLY public.movimientos
-ADD CONSTRAINT movimientos_pkey PRIMARY KEY (id);
---
--- Name: productos productos_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-ALTER TABLE ONLY public.productos
-ADD CONSTRAINT productos_pkey PRIMARY KEY (id);
---
--- Name: usuarios usuarios_email_key; Type: CONSTRAINT; Schema: public; Owner: -
---
-ALTER TABLE ONLY public.usuarios
-ADD CONSTRAINT usuarios_email_key UNIQUE (email);
---
--- Name: usuarios usuarios_name_key; Type: CONSTRAINT; Schema: public; Owner: -
---
-ALTER TABLE ONLY public.usuarios
-ADD CONSTRAINT usuarios_name_key UNIQUE (name);
---
--- Name: usuarios usuarios_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-ALTER TABLE ONLY public.usuarios
-ADD CONSTRAINT usuarios_pkey PRIMARY KEY (id);
---
--- Name: venta_detalle venta_detalle_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-ALTER TABLE ONLY public.venta_detalle
-ADD CONSTRAINT venta_detalle_pkey PRIMARY KEY (id);
---
--- Name: ventas ventas_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-ALTER TABLE ONLY public.ventas
-ADD CONSTRAINT ventas_pkey PRIMARY KEY (id);
---
--- Name: ventas_import_raw ventas_import_raw_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-ALTER TABLE ONLY public.ventas_import_raw
-ADD CONSTRAINT ventas_import_raw_pkey PRIMARY KEY (id);
---
--- Name: idx_bitacora_usuario; Type: INDEX; Schema: public; Owner: -
---
-CREATE INDEX idx_bitacora_usuario ON public.bitacora USING btree (usuario_id);
---
--- Name: idx_ventas_import_raw_lote; Type: INDEX; Schema: public; Owner: -
---
-CREATE INDEX idx_ventas_import_raw_lote ON public.ventas_import_raw USING btree (lote_id);
---
--- Name: idx_ventas_import_raw_procesado; Type: INDEX; Schema: public; Owner: -
---
-CREATE INDEX idx_ventas_import_raw_procesado ON public.ventas_import_raw USING btree (procesado);
---
--- Name: idx_ventas_import_raw_estado; Type: INDEX; Schema: public; Owner: -
---
-CREATE INDEX idx_ventas_import_raw_estado ON public.ventas_import_raw USING btree (estado_resolucion);
---
--- Name: idx_movimientos_bodega; Type: INDEX; Schema: public; Owner: -
---
-CREATE INDEX idx_movimientos_bodega ON public.movimientos USING btree (bodega_id);
---
--- Name: idx_movimientos_fecha; Type: INDEX; Schema: public; Owner: -
---
-CREATE INDEX idx_movimientos_fecha ON public.movimientos USING btree (fecha);
---
--- Name: idx_movimientos_producto; Type: INDEX; Schema: public; Owner: -
---
-CREATE INDEX idx_movimientos_producto ON public.movimientos USING btree (producto_id);
---
--- Name: idx_movimientos_usuario; Type: INDEX; Schema: public; Owner: -
---
-CREATE INDEX idx_movimientos_usuario ON public.movimientos USING btree (usuario_id);
---
--- Name: idx_productos_bodega; Type: INDEX; Schema: public; Owner: -
---
-CREATE INDEX idx_productos_bodega ON public.productos USING btree (bodega_id);
---
--- Name: idx_venta_detalle_producto; Type: INDEX; Schema: public; Owner: -
---
-CREATE INDEX idx_venta_detalle_producto ON public.venta_detalle USING btree (producto_id);
---
--- Name: idx_venta_detalle_venta; Type: INDEX; Schema: public; Owner: -
---
-CREATE INDEX idx_venta_detalle_venta ON public.venta_detalle USING btree (venta_id);
---
--- Name: idx_ventas_cliente; Type: INDEX; Schema: public; Owner: -
---
-CREATE INDEX idx_ventas_cliente ON public.ventas USING btree (cliente_id);
---
--- Name: idx_ventas_fecha; Type: INDEX; Schema: public; Owner: -
---
-CREATE INDEX idx_ventas_fecha ON public.ventas USING btree (fecha);
---
--- Name: idx_ventas_usuario; Type: INDEX; Schema: public; Owner: -
---
-CREATE INDEX idx_ventas_usuario ON public.ventas USING btree (usuario_id);
---
--- Name: bitacora bitacora_usuario_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-ALTER TABLE ONLY public.bitacora
-ADD CONSTRAINT bitacora_usuario_id_fkey FOREIGN KEY (usuario_id) REFERENCES public.usuarios(id) ON DELETE
-SET NULL;
---
--- Name: movimientos movimientos_bodega_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-ALTER TABLE ONLY public.movimientos
-ADD CONSTRAINT movimientos_bodega_id_fkey FOREIGN KEY (bodega_id) REFERENCES public.bodegas(id) ON DELETE RESTRICT;
---
--- Name: movimientos movimientos_producto_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-ALTER TABLE ONLY public.movimientos
-ADD CONSTRAINT movimientos_producto_id_fkey FOREIGN KEY (producto_id) REFERENCES public.productos(id) ON DELETE CASCADE;
---
--- Name: movimientos movimientos_usuario_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-ALTER TABLE ONLY public.movimientos
-ADD CONSTRAINT movimientos_usuario_id_fkey FOREIGN KEY (usuario_id) REFERENCES public.usuarios(id) ON DELETE RESTRICT;
---
--- Name: productos productos_bodega_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-ALTER TABLE ONLY public.productos
-ADD CONSTRAINT productos_bodega_id_fkey FOREIGN KEY (bodega_id) REFERENCES public.bodegas(id) ON DELETE RESTRICT;
---
--- Name: venta_detalle venta_detalle_producto_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-ALTER TABLE ONLY public.venta_detalle
-ADD CONSTRAINT venta_detalle_producto_id_fkey FOREIGN KEY (producto_id) REFERENCES public.productos(id) ON DELETE RESTRICT;
---
--- Name: venta_detalle venta_detalle_venta_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-ALTER TABLE ONLY public.venta_detalle
-ADD CONSTRAINT venta_detalle_venta_id_fkey FOREIGN KEY (venta_id) REFERENCES public.ventas(id) ON DELETE CASCADE;
---
--- Name: ventas ventas_cliente_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-ALTER TABLE ONLY public.ventas
-ADD CONSTRAINT ventas_cliente_id_fkey FOREIGN KEY (cliente_id) REFERENCES public.clientes(id) ON DELETE RESTRICT;
---
--- Name: ventas ventas_usuario_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-ALTER TABLE ONLY public.ventas
-ADD CONSTRAINT ventas_usuario_id_fkey FOREIGN KEY (usuario_id) REFERENCES public.usuarios(id) ON DELETE RESTRICT;
+
+-- =====================================================================
+-- Restricciones (PRIMARY KEY, UNIQUE, FOREIGN KEY)
+-- Se agregan dentro de un bloque que ignora "ya existe" (duplicate_object)
+-- para poder re-ejecutar este script sobre una base de datos existente.
+-- =====================================================================
+DO $$ BEGIN
+    ALTER TABLE ONLY public.bitacora ADD CONSTRAINT bitacora_pkey PRIMARY KEY (id);
+EXCEPTION WHEN duplicate_object OR duplicate_table OR invalid_table_definition THEN NULL; END $$;
+
+DO $$ BEGIN
+    ALTER TABLE ONLY public.bodegas ADD CONSTRAINT bodegas_pkey PRIMARY KEY (id);
+EXCEPTION WHEN duplicate_object OR duplicate_table OR invalid_table_definition THEN NULL; END $$;
+
+DO $$ BEGIN
+    ALTER TABLE ONLY public.clientes ADD CONSTRAINT clientes_pkey PRIMARY KEY (id);
+EXCEPTION WHEN duplicate_object OR duplicate_table OR invalid_table_definition THEN NULL; END $$;
+
+DO $$ BEGIN
+    ALTER TABLE ONLY public.movimientos ADD CONSTRAINT movimientos_pkey PRIMARY KEY (id);
+EXCEPTION WHEN duplicate_object OR duplicate_table OR invalid_table_definition THEN NULL; END $$;
+
+DO $$ BEGIN
+    ALTER TABLE ONLY public.productos ADD CONSTRAINT productos_pkey PRIMARY KEY (id);
+EXCEPTION WHEN duplicate_object OR duplicate_table OR invalid_table_definition THEN NULL; END $$;
+
+DO $$ BEGIN
+    ALTER TABLE ONLY public.usuarios ADD CONSTRAINT usuarios_email_key UNIQUE (email);
+EXCEPTION WHEN duplicate_object OR duplicate_table OR invalid_table_definition THEN NULL; END $$;
+
+DO $$ BEGIN
+    ALTER TABLE ONLY public.usuarios ADD CONSTRAINT usuarios_name_key UNIQUE (name);
+EXCEPTION WHEN duplicate_object OR duplicate_table OR invalid_table_definition THEN NULL; END $$;
+
+DO $$ BEGIN
+    ALTER TABLE ONLY public.usuarios ADD CONSTRAINT usuarios_pkey PRIMARY KEY (id);
+EXCEPTION WHEN duplicate_object OR duplicate_table OR invalid_table_definition THEN NULL; END $$;
+
+DO $$ BEGIN
+    ALTER TABLE ONLY public.venta_detalle ADD CONSTRAINT venta_detalle_pkey PRIMARY KEY (id);
+EXCEPTION WHEN duplicate_object OR duplicate_table OR invalid_table_definition THEN NULL; END $$;
+
+DO $$ BEGIN
+    ALTER TABLE ONLY public.ventas ADD CONSTRAINT ventas_pkey PRIMARY KEY (id);
+EXCEPTION WHEN duplicate_object OR duplicate_table OR invalid_table_definition THEN NULL; END $$;
+
+DO $$ BEGIN
+    ALTER TABLE ONLY public.ventas_import_raw ADD CONSTRAINT ventas_import_raw_pkey PRIMARY KEY (id);
+EXCEPTION WHEN duplicate_object OR duplicate_table OR invalid_table_definition THEN NULL; END $$;
+
+--
+-- Indices (CREATE INDEX IF NOT EXISTS ya es idempotente de forma nativa)
+--
+CREATE INDEX IF NOT EXISTS idx_bitacora_usuario ON public.bitacora USING btree (usuario_id);
+CREATE INDEX IF NOT EXISTS idx_ventas_import_raw_lote ON public.ventas_import_raw USING btree (lote_id);
+CREATE INDEX IF NOT EXISTS idx_ventas_import_raw_procesado ON public.ventas_import_raw USING btree (procesado);
+CREATE INDEX IF NOT EXISTS idx_ventas_import_raw_estado ON public.ventas_import_raw USING btree (estado_resolucion);
+CREATE INDEX IF NOT EXISTS idx_movimientos_bodega ON public.movimientos USING btree (bodega_id);
+CREATE INDEX IF NOT EXISTS idx_movimientos_fecha ON public.movimientos USING btree (fecha);
+CREATE INDEX IF NOT EXISTS idx_movimientos_producto ON public.movimientos USING btree (producto_id);
+CREATE INDEX IF NOT EXISTS idx_movimientos_usuario ON public.movimientos USING btree (usuario_id);
+CREATE INDEX IF NOT EXISTS idx_productos_bodega ON public.productos USING btree (bodega_id);
+CREATE INDEX IF NOT EXISTS idx_venta_detalle_producto ON public.venta_detalle USING btree (producto_id);
+CREATE INDEX IF NOT EXISTS idx_venta_detalle_venta ON public.venta_detalle USING btree (venta_id);
+CREATE INDEX IF NOT EXISTS idx_ventas_cliente ON public.ventas USING btree (cliente_id);
+CREATE INDEX IF NOT EXISTS idx_ventas_fecha ON public.ventas USING btree (fecha);
+CREATE INDEX IF NOT EXISTS idx_ventas_usuario ON public.ventas USING btree (usuario_id);
+
+--
+-- Foreign keys
+--
+DO $$ BEGIN
+    ALTER TABLE ONLY public.bitacora
+    ADD CONSTRAINT bitacora_usuario_id_fkey FOREIGN KEY (usuario_id) REFERENCES public.usuarios(id) ON DELETE SET NULL;
+EXCEPTION WHEN duplicate_object OR duplicate_table OR invalid_table_definition THEN NULL; END $$;
+
+DO $$ BEGIN
+    ALTER TABLE ONLY public.movimientos
+    ADD CONSTRAINT movimientos_bodega_id_fkey FOREIGN KEY (bodega_id) REFERENCES public.bodegas(id) ON DELETE RESTRICT;
+EXCEPTION WHEN duplicate_object OR duplicate_table OR invalid_table_definition THEN NULL; END $$;
+
+DO $$ BEGIN
+    ALTER TABLE ONLY public.movimientos
+    ADD CONSTRAINT movimientos_producto_id_fkey FOREIGN KEY (producto_id) REFERENCES public.productos(id) ON DELETE CASCADE;
+EXCEPTION WHEN duplicate_object OR duplicate_table OR invalid_table_definition THEN NULL; END $$;
+
+DO $$ BEGIN
+    ALTER TABLE ONLY public.movimientos
+    ADD CONSTRAINT movimientos_usuario_id_fkey FOREIGN KEY (usuario_id) REFERENCES public.usuarios(id) ON DELETE RESTRICT;
+EXCEPTION WHEN duplicate_object OR duplicate_table OR invalid_table_definition THEN NULL; END $$;
+
+DO $$ BEGIN
+    ALTER TABLE ONLY public.productos
+    ADD CONSTRAINT productos_bodega_id_fkey FOREIGN KEY (bodega_id) REFERENCES public.bodegas(id) ON DELETE RESTRICT;
+EXCEPTION WHEN duplicate_object OR duplicate_table OR invalid_table_definition THEN NULL; END $$;
+
+DO $$ BEGIN
+    ALTER TABLE ONLY public.venta_detalle
+    ADD CONSTRAINT venta_detalle_producto_id_fkey FOREIGN KEY (producto_id) REFERENCES public.productos(id) ON DELETE RESTRICT;
+EXCEPTION WHEN duplicate_object OR duplicate_table OR invalid_table_definition THEN NULL; END $$;
+
+DO $$ BEGIN
+    ALTER TABLE ONLY public.venta_detalle
+    ADD CONSTRAINT venta_detalle_venta_id_fkey FOREIGN KEY (venta_id) REFERENCES public.ventas(id) ON DELETE CASCADE;
+EXCEPTION WHEN duplicate_object OR duplicate_table OR invalid_table_definition THEN NULL; END $$;
+
+DO $$ BEGIN
+    ALTER TABLE ONLY public.ventas
+    ADD CONSTRAINT ventas_cliente_id_fkey FOREIGN KEY (cliente_id) REFERENCES public.clientes(id) ON DELETE RESTRICT;
+EXCEPTION WHEN duplicate_object OR duplicate_table OR invalid_table_definition THEN NULL; END $$;
+
+DO $$ BEGIN
+    ALTER TABLE ONLY public.ventas
+    ADD CONSTRAINT ventas_usuario_id_fkey FOREIGN KEY (usuario_id) REFERENCES public.usuarios(id) ON DELETE RESTRICT;
+EXCEPTION WHEN duplicate_object OR duplicate_table OR invalid_table_definition THEN NULL; END $$;
 --
 -- PostgreSQL database dump complete
 --

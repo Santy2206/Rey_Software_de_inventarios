@@ -40,6 +40,10 @@ flet pack main.py ^
   --copyright "2026 REY Inventarios" ^
   -y || goto :error
 
+REM Si se probo el .exe empaquetado en esta maquina, Flet guarda la sesion
+REM de login junto al ejecutable (dentro de _internal). No debe distribuirse.
+if exist "dist\%NOMBRE%\_internal\.rey_session.json" del /q "dist\%NOMBRE%\_internal\.rey_session.json"
+
 echo [4/5] Armando paquete de instalacion...
 if exist "%PAQUETE%" rmdir /s /q "%PAQUETE%"
 mkdir "%PAQUETE%\app" "%PAQUETE%\base_de_datos"

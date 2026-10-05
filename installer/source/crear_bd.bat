@@ -44,15 +44,18 @@ if errorlevel 1 (
 REM Crear o actualizar rol rey_user con contrasena fija
 "%PSQL%" -h localhost -U postgres -v ON_ERROR_STOP=1 -c "DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname='rey_user') THEN CREATE ROLE rey_user LOGIN PASSWORD 'UDMVnxjZVgDT'; ELSE ALTER ROLE rey_user WITH PASSWORD 'UDMVnxjZVgDT'; END IF; END $$;" >>"%LOG%" 2>&1 || goto :error
 
-REM Si la base de datos ya existe, eliminarla y recrearla para asegurar el schema actual
+REM Si la base de datos ya existe (instalacion previa), se preserva: NO se
+REM elimina ni se recrea. Solo se vuelve a aplicar el schema (es idempotente,
+REM usa IF NOT EXISTS) para traer tablas/columnas nuevas sin tocar los datos.
 "%PSQL%" -h localhost -U postgres -tc "SELECT 1 FROM pg_database WHERE datname='rey_inventarios'" | findstr 1 >nul
 if not errorlevel 1 (
-  >>"%LOG%" echo Base de datos existente detectada. Se elimina y recrea para aplicar el schema actual.
-  "%PSQL%" -h localhost -U postgres -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname='rey_inventarios' AND pid <> pg_backend_pid();" >nul 2>>"%LOG%"
-  "%PSQL%" -h localhost -U postgres -c "DROP DATABASE IF EXISTS rey_inventarios;" >>"%LOG%" 2>&1 || goto :error
+  >>"%LOG%" echo Base de datos existente detectada. Se preservan los datos; solo se actualiza el schema.
+  "%PSQL%" -h localhost -U rey_user -d rey_inventarios -v ON_ERROR_STOP=1 -q -f "%SCHEMA%" >>"%LOG%" 2>&1 || goto :error
+  >>"%LOG%" echo [%date% %time%] Base de datos actualizada (datos existentes preservados).
+  exit /b 0
 )
 
-REM Crear base de datos
+REM Primera instalacion: crear base de datos, schema y datos de ejemplo
 "%PSQL%" -h localhost -U postgres -c "CREATE DATABASE rey_inventarios OWNER rey_user ENCODING 'UTF8' LC_COLLATE='es_CO.UTF-8' LC_CTYPE='es_CO.UTF-8' TEMPLATE template0;" >>"%LOG%" 2>&1 || goto :error
 
 REM Crear tablas y datos iniciales como rey_user
