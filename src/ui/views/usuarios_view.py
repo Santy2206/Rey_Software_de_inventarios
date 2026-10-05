@@ -27,7 +27,7 @@ from src.ui.components.status_header import StatusHeader
 from src.ui.components.page_header import PageHeader
 
 _COLORES_ROL = {
-    "administrador": ("#FEE2E2", "#B91C1C"),
+    "administrador": ("#F5F5DC", "#FFC200"),
     "vendedor": ("#DCFCE7", "#15803D"),
     "bodeguero": ("#DBEAFE", "#1D4ED8"),
 }
@@ -42,7 +42,7 @@ class _UsuariosView(ft.Container):
     def __init__(self):
         super().__init__()
         self.expand = True
-        self.bgcolor = "#f5f6fa"
+        self.bgcolor="#F5F6FA"
         self.padding = 20
 
         self._usuarios: list[dict] = []
@@ -75,7 +75,7 @@ class _UsuariosView(ft.Container):
                 ft.TextButton("Cancelar", on_click=self._cerrar_dialogo_rol),
                 ft.ElevatedButton(
                     "Guardar",
-                    bgcolor="#9eff8f",
+                    bgcolor="#FFC200",
                     color="black",
                     on_click=self._guardar_rol,
                 ),
@@ -282,7 +282,7 @@ class _UsuariosView(ft.Container):
 
     def _mostrar_snack(self, mensaje: str, error: bool = False):
         self._snackbar.content = ft.Text(mensaje, color="white")
-        self._snackbar.bgcolor = "#d32f2f" if error else "#388e3c"
+        self._snackbar.bgcolor="#FFC200" if error else "#388e3c"
         self._snackbar.open = True
         if self.page:
             self.page.update()

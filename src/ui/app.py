@@ -14,7 +14,9 @@ Reglas:
     - Las vistas NUNCA deben recibir el objeto `page` directamente.
 """
 
+import os
 import threading
+from pathlib import Path
 
 import flet as ft
 from src.services.auth_service import AuthService
@@ -23,7 +25,7 @@ from src.ui.views.dashboard_view import DashboardView
 
 
 def App(page: ft.Page):
-    page.title = "REY Inventarios"
+    page.title = "REY Software de Inventarios"
     page.padding = 0
 
     # Hacer que page.update() sea seguro desde hilos de fondo:
@@ -51,19 +53,25 @@ def App(page: ft.Page):
     page.window.minimized = False
     page.window.visible = True
     page.window.focused = True
-    page.window.icon = "assets/icon.ico"
+    _assets_dir = Path(
+        os.environ.get(
+            "FLET_ASSETS_DIR",
+            str(Path(__file__).resolve().parents[2] / "assets"),
+        )
+    )
+    page.window.icon = (_assets_dir / "icon.ico").as_posix()
 
     def navigate_to(view_name: str, **kwargs):
         page.clean()
         if view_name == "login":
             # Layout centrado solo para la pantalla de login
-            page.bgcolor = "#b3001b"
+            page.bgcolor="#000000"
             page.vertical_alignment = ft.MainAxisAlignment.CENTER
             page.horizontal_alignment = ft.CrossAxisAlignment.CENTER
             page.add(LoginView(on_login=handle_login))
         elif view_name == "dashboard":
             # Resetear alineación: si queda centrada, el shell se ve vacío/roto
-            page.bgcolor = "#F5F5F5"
+            page.bgcolor="#F5F5F5"
             page.vertical_alignment = ft.MainAxisAlignment.START
             page.horizontal_alignment = ft.CrossAxisAlignment.START
             page.add(

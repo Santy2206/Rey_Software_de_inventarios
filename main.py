@@ -49,15 +49,16 @@ def main():
         # Sirve los archivos de Flutter (CanvasKit) desde la propia app y no
         # desde el CDN de Google: la app funciona sin internet en la red local.
         no_cdn = os.environ.get("REY_NO_CDN", "1").strip() not in {"0", "false", "no"}
-        ft.app(
-            target=App,
+        ft.run(
+            App,
             view=None if headless else ft.AppView.WEB_BROWSER,
+            assets_dir="assets",
             host=host,
             port=port,
             no_cdn=no_cdn,
         )
     else:
-        ft.app(target=App, view=ft.AppView.FLET_APP)
+        ft.run(App, view=ft.AppView.FLET_APP, assets_dir="assets")
 
 
 if __name__ == "__main__":

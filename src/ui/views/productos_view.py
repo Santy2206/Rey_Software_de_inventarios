@@ -43,7 +43,7 @@ class _ProductosView(ft.Container):
     def __init__(self):
         super().__init__()
         self.expand = True
-        self.bgcolor = "#f5f6fa"
+        self.bgcolor="#F5F6FA"
         self.padding = 20
 
         # ── Estado interno ───────────────────────────────────────────────────
@@ -130,7 +130,7 @@ class _ProductosView(ft.Container):
                 ft.TextButton("Cancelar", on_click=self._cerrar_dialogo),
                 ft.ElevatedButton(
                     "Guardar",
-                    bgcolor="#9eff8f",
+                    bgcolor="#FFC200",
                     color="black",
                     on_click=self._guardar_producto,
                 ),
@@ -169,8 +169,7 @@ class _ProductosView(ft.Container):
                             ft.ElevatedButton(
                                 "Examinar",
                                 icon=ft.Icons.FOLDER_OPEN,
-                                bgcolor="#2196F3",
-                                color="white",
+                                bgcolor="#FFC200", color="black",
                                 on_click=self._abrir_selector_archivo,
                             ),
                         ],
@@ -181,8 +180,7 @@ class _ProductosView(ft.Container):
                 ft.TextButton("Cancelar", on_click=self._cerrar_dialogo_importar),
                 ft.ElevatedButton(
                     "Importar",
-                    bgcolor="#2196F3",
-                    color="white",
+                    bgcolor="#FFC200", color="black",
                     on_click=self._importar_excel,
                 ),
             ],
@@ -216,7 +214,7 @@ class _ProductosView(ft.Container):
                 controls=[
                     ft.Text(
                         "Esta acción borrará todos los productos, incluyendo sus movimientos y detalles de venta asociados.",
-                        color="red",
+                        color="#FFC200",
                         size=13,
                     ),
                     self._eliminar_password,
@@ -228,8 +226,7 @@ class _ProductosView(ft.Container):
                 ft.ElevatedButton(
                     "Eliminar todo",
                     icon=ft.Icons.DELETE_FOREVER,
-                    bgcolor="#d32f2f",
-                    color="white",
+                    bgcolor="#FFC200", color="black",
                     on_click=self._confirmar_eliminar_todos,
                 ),
             ],
@@ -525,7 +522,7 @@ class _ProductosView(ft.Container):
                             ),
                             ft.IconButton(
                                 icon=ft.Icons.DELETE_OUTLINE,
-                                icon_color="red",
+                                icon_color="#FFC200",
                                 tooltip="Eliminar producto",
                                 on_click=lambda e, pid=producto["id"], nom=nombre: self._eliminar_producto(
                                     pid, nom
@@ -556,29 +553,26 @@ class _ProductosView(ft.Container):
                 ft.ElevatedButton(
                     "Exportar Excel",
                     icon=ft.Icons.DOWNLOAD,
-                    bgcolor="#2196F3",
-                    color="white",
+                    bgcolor="#FFC200", color="black",
                     on_click=self._exportar_excel,
                 ),
                 ft.ElevatedButton(
                     "Importar Excel",
                     icon=ft.Icons.UPLOAD_FILE,
-                    bgcolor="#2196F3",
-                    color="white",
+                    bgcolor="#FFC200", color="black",
                     on_click=self._abrir_dialogo_importar,
                 ),
                 ft.ElevatedButton(
                     "Crear Producto",
                     icon=ft.Icons.ADD,
-                    bgcolor="#9eff8f",
+                    bgcolor="#FFC200",
                     color="black",
                     on_click=self._abrir_dialogo_crear,
                 ),
                 ft.ElevatedButton(
                     "Eliminar todos",
                     icon=ft.Icons.DELETE_FOREVER,
-                    bgcolor="#d32f2f",
-                    color="white",
+                    bgcolor="#FFC200", color="black",
                     on_click=self._abrir_dialogo_eliminar_todos,
                 ),
             ],
@@ -1044,6 +1038,6 @@ class _ProductosView(ft.Container):
 
     def _mostrar_snack(self, mensaje: str, error: bool = False):
         self._snackbar.content = ft.Text(mensaje, color="white")
-        self._snackbar.bgcolor = "#d32f2f" if error else "#388e3c"
+        self._snackbar.bgcolor="#FFC200" if error else "#388e3c"
         self._snackbar.open = True
         self.page.update()

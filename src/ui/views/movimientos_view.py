@@ -34,7 +34,7 @@ from src.ui.components.bodega_labels import label_bodega
 
 _COLOR_TIPO = {
     "Entrada": ("#DCFCE7", "#15803D"),
-    "Salida": ("#FEE2E2", "#B91C1C"),
+    "Salida": ("#F5F5DC", "#FFC200"),
     "Transferencia": ("#E0E7FF", "#4338CA"),
 }
 
@@ -57,7 +57,7 @@ class _MovimientosView(ft.Container):
         super().__init__()
 
         self.expand = True
-        self.bgcolor = "#f5f6fa"
+        self.bgcolor="#F5F6FA"
         self.padding = 20
 
         # ── Estado interno ──────────────────────────────────────────────
@@ -224,8 +224,7 @@ class _MovimientosView(ft.Container):
         self.boton_registrar = ft.ElevatedButton(
             "Registrar Entrada",
             icon=ft.Icons.DOWNLOAD,
-            bgcolor="#16A34A",
-            color="white",
+            bgcolor="#FFC200", color="black",
             height=45,
             on_click=self._registrar_movimiento,
             style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=10)),
@@ -253,9 +252,9 @@ class _MovimientosView(ft.Container):
     def _actualizar_tipo(self, e=None):
         textos = {
             "ingreso": ("Registrar Entrada", ft.Icons.DOWNLOAD, "#16A34A"),
-            "egreso": ("Registrar Salida", ft.Icons.UPLOAD, "#DC2626"),
+            "egreso": ("Registrar Salida", ft.Icons.UPLOAD, "#FFC200"),
             "ajuste": ("Registrar Ajuste", ft.Icons.TUNE, "#D97706"),
-            "baja": ("Registrar Baja", ft.Icons.DELETE, "#7C2D12"),
+            "baja": ("Registrar Baja", ft.Icons.DELETE, "#FFC200"),
         }
         texto, icono, color = textos.get(self.tipo.value, textos["ingreso"])
 
@@ -515,6 +514,6 @@ class _MovimientosView(ft.Container):
 
     def _mostrar_snack(self, mensaje: str, error: bool = False):
         self._snackbar.content = ft.Text(mensaje, color="white")
-        self._snackbar.bgcolor = "#d32f2f" if error else "#388e3c"
+        self._snackbar.bgcolor="#FFC200" if error else "#388e3c"
         self._snackbar.open = True
         self.page.update()

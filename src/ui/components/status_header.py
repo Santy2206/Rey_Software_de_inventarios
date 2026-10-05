@@ -65,8 +65,7 @@ class StatusHeader:
         self._btn_vista = ft.ElevatedButton(
             content="Abrir en navegador",
             icon=ft.Icons.OPEN_IN_BROWSER,
-            bgcolor="#2196F3",
-            color="white",
+            bgcolor="#FFC200", color="black",
             height=35,
             on_click=lambda _: self._view_switcher.switch(),
         )
@@ -74,8 +73,7 @@ class StatusHeader:
         self._btn_sync = ft.ElevatedButton(
             "Sincronizar ahora",
             icon=ft.Icons.CLOUD_SYNC,
-            bgcolor="#2196F3",
-            color="white",
+            bgcolor="#FFC200", color="black",
             height=35,
             visible=False,
             on_click=self._on_sincronizar,
@@ -89,7 +87,7 @@ class StatusHeader:
                 spacing=10,
                 controls=[
                     ft.CircleAvatar(
-                        bgcolor="#b3001b",
+                        bgcolor="#FFC200",
                         content=ft.Text("A", color="white"),
                     ),
                     ft.Column(
@@ -226,8 +224,7 @@ class StatusHeader:
                 ft.ElevatedButton(
                     "Sincronizar ahora",
                     icon=ft.Icons.CLOUD_SYNC,
-                    bgcolor="#2196F3",
-                    color="white",
+                    bgcolor="#FFC200", color="black",
                     on_click=lambda e: self._sincronizar_desde_pendientes(dlg),
                 ),
             ],
@@ -281,7 +278,7 @@ class StatusHeader:
             # Notificación tipo Toast
             sb = ft.SnackBar(
                 ft.Text(mensaje),
-                bgcolor="green" if success else "red",
+                bgcolor="green" if success else "#FFC200",
                 show_close_icon=True,
                 duration=5000,
             )
@@ -321,7 +318,7 @@ class StatusHeader:
                 self._sync_text.value = f"Pendientes ({self._total_pendientes})"
                 self._sync_text.color = "orange"
                 self._sync_icon.color = "orange"
-                self._sync_badge.bgcolor = "#FFF7ED"
+                self._sync_badge.bgcolor="#FFF7ED"
                 self._sync_badge.ink = True
                 self._sync_badge.mouse_cursor = ft.MouseCursor.CLICK
                 self._btn_sync.visible = True
@@ -329,7 +326,7 @@ class StatusHeader:
                 self._sync_text.value = "Sincronizado"
                 self._sync_text.color = "green"
                 self._sync_icon.color = "green"
-                self._sync_badge.bgcolor = "#E8FFF0"
+                self._sync_badge.bgcolor="#E8FFF0"
                 self._sync_badge.ink = False
                 self._sync_badge.mouse_cursor = None
                 self._btn_sync.visible = False
@@ -337,9 +334,9 @@ class StatusHeader:
             self._detalle_pendientes = {}
             self._total_pendientes = 0
             self._sync_text.value = "Sin conexión"
-            self._sync_text.color = "red"
-            self._sync_icon.color = "red"
-            self._sync_badge.bgcolor = "#FEE2E2"
+            self._sync_text.color="#FFC200"
+            self._sync_icon.color="#FFC200"
+            self._sync_badge.bgcolor="#F5F5DC"
             self._sync_badge.ink = False
             self._sync_badge.mouse_cursor = None
             self._btn_sync.visible = False

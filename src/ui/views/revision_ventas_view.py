@@ -53,7 +53,7 @@ class _RevisionVentasView(ft.Container):
     def __init__(self):
         super().__init__()
         self.expand = True
-        self.bgcolor = "#f5f6fa"
+        self.bgcolor="#F5F6FA"
         self.padding = 20
 
         self._filas: list[dict] = []
@@ -144,8 +144,7 @@ class _RevisionVentasView(ft.Container):
                 ft.TextButton("Cancelar", on_click=self._cerrar_dialogo_crear),
                 ft.ElevatedButton(
                     "Crear y vincular",
-                    bgcolor="#16A34A",
-                    color="white",
+                    bgcolor="#FFC200", color="black",
                     on_click=self._confirmar_crear,
                 ),
             ],
@@ -168,8 +167,7 @@ class _RevisionVentasView(ft.Container):
                 ft.TextButton("Cancelar", on_click=self._cerrar_dialogo_descartar),
                 ft.ElevatedButton(
                     "Descartar",
-                    bgcolor="#b3001b",
-                    color="white",
+                    bgcolor="#FFC200", color="black",
                     on_click=self._confirmar_descartar,
                 ),
             ],
@@ -207,8 +205,7 @@ class _RevisionVentasView(ft.Container):
                 ),
                 ft.ElevatedButton(
                     "Descartar todas",
-                    bgcolor="#b3001b",
-                    color="white",
+                    bgcolor="#FFC200", color="black",
                     on_click=self._confirmar_descartar_todos,
                 ),
             ],
@@ -252,8 +249,7 @@ class _RevisionVentasView(ft.Container):
                 ft.TextButton("Cancelar", on_click=self._cerrar_dialogo_fusion),
                 ft.ElevatedButton(
                     "Fusionar",
-                    bgcolor="#7C2D12",
-                    color="white",
+                    bgcolor="#FFC200", color="black",
                     on_click=self._confirmar_fusion,
                 ),
             ],
@@ -347,39 +343,35 @@ class _RevisionVentasView(ft.Container):
                 ft.ElevatedButton(
                     "Resolver productos",
                     icon=ft.Icons.AUTO_FIX_HIGH,
-                    bgcolor="#2196F3",
-                    color="white",
+                    bgcolor="#FFC200", color="black",
                     height=40,
                     on_click=self._on_resolver_pendientes,
                 ),
                 ft.ElevatedButton(
                     "Resolver clientes",
                     icon=ft.Icons.PERSON_SEARCH,
-                    bgcolor="#0D9488",
-                    color="white",
+                    bgcolor="#FFC200", color="black",
                     height=40,
                     on_click=self._on_resolver_clientes,
                 ),
                 ft.ElevatedButton(
                     "Procesar ventas",
                     icon=ft.Icons.POINT_OF_SALE,
-                    bgcolor="#b3001b",
-                    color="white",
+                    bgcolor="#FFC200", color="black",
                     height=40,
                     on_click=self._on_procesar_ventas,
                 ),
                 ft.ElevatedButton(
                     "Fusionar productos",
                     icon=ft.Icons.MERGE,
-                    bgcolor="#7C2D12",
-                    color="white",
+                    bgcolor="#FFC200", color="black",
                     height=40,
                     on_click=self._abrir_dialogo_fusion,
                 ),
                 ft.ElevatedButton(
                     "Descartar todos",
                     icon=ft.Icons.DELETE_SWEEP,
-                    bgcolor="#991B1B",
+                    bgcolor="#000000",
                     color="white",
                     height=40,
                     on_click=self._abrir_dialogo_descartar_todos,
@@ -387,8 +379,7 @@ class _RevisionVentasView(ft.Container):
                 ft.ElevatedButton(
                     "Actualizar",
                     icon=ft.Icons.REFRESH,
-                    bgcolor="#6B7280",
-                    color="white",
+                    bgcolor="#FFC200", color="black",
                     height=40,
                     on_click=lambda e: threading.Thread(
                         target=self._cargar_pendientes, daemon=True
@@ -498,7 +489,7 @@ class _RevisionVentasView(ft.Container):
             activo = self._categoria_exc == key
             self._chips_exc.controls.append(
                 ft.Container(
-                    bgcolor="#312E81" if activo else ("#EEF2FF" if n else "#F3F4F6"),
+                    bgcolor="#FFC200" if activo else ("#EEF2FF" if n else "#F3F4F6"),
                     border_radius=20,
                     padding=ft.padding.symmetric(horizontal=12, vertical=8),
                     on_click=lambda e, k=key: self._abrir_categoria_exc(k),
@@ -548,8 +539,8 @@ class _RevisionVentasView(ft.Container):
             for p in self._detalle_exc:
                 self._lista_exc.controls.append(
                     ft.Container(
-                        bgcolor="#FEF2F2",
-                        border=ft.border.all(1, "#FECACA"),
+                        bgcolor="#F5F5DC",
+                        border=ft.border.all(1, "#FFE4B5"),
                         border_radius=10,
                         padding=10,
                         content=ft.Text(
@@ -615,8 +606,8 @@ class _RevisionVentasView(ft.Container):
             chips.append(
                 self._chip(
                     f"reclasificado (cta {attrs.get('cuenta_original') or '—'})",
-                    "#FEE2E2",
-                    "#991B1B",
+                    "#F5F5DC",
+                    "#000000",
                 )
             )
         if attrs.get("corregido") and attrs.get("correcciones"):
@@ -737,15 +728,13 @@ class _RevisionVentasView(ft.Container):
                             ft.ElevatedButton(
                                 "Crear",
                                 icon=ft.Icons.ADD,
-                                bgcolor="#16A34A",
-                                color="white",
+                                bgcolor="#FFC200", color="black",
                                 on_click=lambda e, f=fila: self._abrir_dialogo_crear(f),
                             ),
                             ft.ElevatedButton(
                                 "Descartar",
                                 icon=ft.Icons.DELETE_OUTLINE,
-                                bgcolor="#b3001b",
-                                color="white",
+                                bgcolor="#FFC200", color="black",
                                 on_click=lambda e, f=fila: self._abrir_dialogo_descartar(f),
                             ),
                         ],
@@ -865,8 +854,7 @@ class _RevisionVentasView(ft.Container):
                             ft.ElevatedButton(
                                 "Usar nombre del archivo",
                                 icon=ft.Icons.EDIT,
-                                bgcolor="#0D9488",
-                                color="white",
+                                bgcolor="#FFC200", color="black",
                                 on_click=lambda e, fid=fila_id: self._forzar_nombre(
                                     fid
                                 ),
@@ -1122,7 +1110,7 @@ class _RevisionVentasView(ft.Container):
     # ------------------------------------------------------------------
     def _mostrar_snack(self, mensaje: str, error: bool = False):
         self._snackbar.content = ft.Text(mensaje, color="white")
-        self._snackbar.bgcolor = "#d32f2f" if error else "#388e3c"
+        self._snackbar.bgcolor="#FFC200" if error else "#388e3c"
         self._snackbar.open = True
         if self.page:
             self.page.update()

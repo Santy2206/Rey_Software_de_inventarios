@@ -51,7 +51,7 @@ class _VentasView(ft.Container):
     def __init__(self):
         super().__init__()
         self.expand = True
-        self.bgcolor = "#f5f6fa"
+        self.bgcolor="#F5F6FA"
         self.padding = 20
 
         self._clientes: list[dict] = []
@@ -89,7 +89,7 @@ class _VentasView(ft.Container):
             "$0.00",
             size=28,
             weight=ft.FontWeight.BOLD,
-            color="#b3001b",
+            color="#FFC200",
         )
         self._lista_carrito = ft.Column(
             spacing=0,
@@ -158,8 +158,7 @@ class _VentasView(ft.Container):
                 ft.TextButton("Cancelar", on_click=self._cerrar_dialogo_cliente),
                 ft.ElevatedButton(
                     "Guardar",
-                    bgcolor="#b3001b",
-                    color="white",
+                    bgcolor="#FFC200", color="black",
                     on_click=self._guardar_cliente,
                 ),
             ],
@@ -177,8 +176,7 @@ class _VentasView(ft.Container):
                 ft.TextButton("Cancelar", on_click=self._cerrar_dialogo_anular),
                 ft.ElevatedButton(
                     "Anular",
-                    bgcolor="#b3001b",
-                    color="white",
+                    bgcolor="#FFC200", color="black",
                     on_click=self._confirmar_anulacion,
                 ),
             ],
@@ -210,8 +208,7 @@ class _VentasView(ft.Container):
                             ft.ElevatedButton(
                                 "Examinar",
                                 icon=ft.Icons.FOLDER_OPEN,
-                                bgcolor="#2196F3",
-                                color="white",
+                                bgcolor="#FFC200", color="black",
                                 on_click=self._abrir_selector_archivo,
                             ),
                         ],
@@ -222,8 +219,7 @@ class _VentasView(ft.Container):
                 ft.TextButton("Cancelar", on_click=self._cerrar_dialogo_importar),
                 ft.ElevatedButton(
                     "Importar",
-                    bgcolor="#b3001b",
-                    color="white",
+                    bgcolor="#FFC200", color="black",
                     on_click=self._importar_ventas,
                 ),
             ],
@@ -297,8 +293,7 @@ class _VentasView(ft.Container):
                 ft.ElevatedButton(
                     "Importar ventas",
                     icon=ft.Icons.UPLOAD_FILE,
-                    bgcolor="#b3001b",
-                    color="white",
+                    bgcolor="#FFC200", color="black",
                     height=45,
                     on_click=self._abrir_dialogo_importar,
                     style=ft.ButtonStyle(
@@ -333,8 +328,7 @@ class _VentasView(ft.Container):
                             ft.ElevatedButton(
                                 "Nuevo cliente",
                                 icon=ft.Icons.PERSON_ADD,
-                                bgcolor="#b3001b",
-                                color="white",
+                                bgcolor="#FFC200", color="black",
                                 height=50,
                                 on_click=self._abrir_dialogo_cliente,
                             ),
@@ -349,8 +343,7 @@ class _VentasView(ft.Container):
                             ft.ElevatedButton(
                                 "Agregar",
                                 icon=ft.Icons.ADD_SHOPPING_CART,
-                                bgcolor="#16A34A",
-                                color="white",
+                                bgcolor="#FFC200", color="black",
                                 height=50,
                                 on_click=self._agregar_al_carrito,
                             ),
@@ -380,8 +373,7 @@ class _VentasView(ft.Container):
                                 icon=ft.Icons.POINT_OF_SALE,
                                 height=50,
                                 style=ft.ButtonStyle(
-                                    bgcolor="#b3001b",
-                                    color="white",
+                                    bgcolor="#FFC200", color="black",
                                 ),
                                 on_click=self._registrar_venta,
                             ),
@@ -543,14 +535,14 @@ class _VentasView(ft.Container):
             producto_id = item["producto_id"]
             self._lista_carrito.controls.append(
                 ft.ListTile(
-                    leading=ft.Icon(ft.Icons.SHOPPING_BAG, color="#b3001b"),
+                    leading=ft.Icon(ft.Icons.SHOPPING_BAG, color="#FFC200"),
                     title=ft.Text(item["nombre"]),
                     subtitle=ft.Text(
                         f"{item['cantidad']} x {_fmt_money(item['precio'])} = {_fmt_money(item['subtotal'])}"
                     ),
                     trailing=ft.IconButton(
                         icon=ft.Icons.DELETE_OUTLINE,
-                        icon_color="red",
+                        icon_color="#FFC200",
                         tooltip="Quitar",
                         on_click=lambda e, pid=producto_id: self._quitar_del_carrito(
                             pid
@@ -658,13 +650,13 @@ class _VentasView(ft.Container):
                 ft.DataCell(ft.Text(venta.get("usuario_nombre") or "—")),
                 ft.DataCell(
                     ft.Container(
-                        bgcolor="#FEE2E2" if anulada else "#DCFCE7",
+                        bgcolor="#F5F5DC" if anulada else "#DCFCE7",
                         border_radius=20,
                         padding=6,
                         alignment=ft.Alignment(0, 0),
                         content=ft.Text(
                             "Anulada" if anulada else "Completada",
-                            color="#B91C1C" if anulada else "#15803D",
+                            color="#FFC200" if anulada else "#15803D",
                             weight=ft.FontWeight.BOLD,
                             size=11,
                         ),
@@ -673,7 +665,7 @@ class _VentasView(ft.Container):
                 ft.DataCell(
                     ft.IconButton(
                         icon=ft.Icons.CANCEL,
-                        icon_color="#B91C1C",
+                        icon_color="#FFC200",
                         tooltip="Anular venta",
                         disabled=anulada,
                         on_click=lambda e, v=venta: self._abrir_dialogo_anular(v),
@@ -722,7 +714,7 @@ class _VentasView(ft.Container):
 
     def _mostrar_snack(self, mensaje: str, error: bool = False):
         self._snackbar.content = ft.Text(mensaje, color="white")
-        self._snackbar.bgcolor = "#d32f2f" if error else "#388e3c"
+        self._snackbar.bgcolor="#FFC200" if error else "#388e3c"
         self._snackbar.open = True
         if self.page:
             self.page.update()
