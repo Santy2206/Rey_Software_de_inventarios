@@ -19,6 +19,8 @@ productos_view.py sigue siendo un stub — cuando la construyan,
 """
 
 import os
+import shutil
+import sys
 from pathlib import Path
 
 import openpyxl
@@ -45,6 +47,28 @@ def _registrar_bitacora_productos(
             )
     except Exception as e:
         print(f" Error al registrar bitácora de producto: {e}")
+
+
+def _reflejar_en_assets_downloads(ruta_salida: str):
+    """
+    Copia el archivo exportado a la carpeta de assets que sirve Flet, para
+    que el enlace de descarga del modo navegador (/downloads/...) funcione.
+
+    Es solo "mejor esfuerzo": en un ejecutable instalado en Program Files
+    un usuario sin privilegios de administrador no puede escribir ahí, así
+    que cualquier error se ignora sin afectar la exportación en modo
+    escritorio (que ya guardó el archivo en Descargas y no depende de esto).
+    """
+    try:
+        if getattr(sys, "frozen", False):
+            assets_dir = Path(sys.executable).resolve().parent / "_internal" / "assets"
+        else:
+            assets_dir = Path(__file__).resolve().parents[2] / "assets"
+        downloads_dir = assets_dir / "downloads"
+        downloads_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(ruta_salida, downloads_dir / "productos_export.xlsx")
+    except Exception as e:
+        print(f" No se pudo reflejar el export en assets/downloads (solo afecta al modo navegador): {e}")
 
 
 def _aplicar_estilos_excel(ruta: str):
@@ -318,16 +342,19 @@ class ProductosService:
         Parámetros:
             bodega_id: filtrar por bodega; None o 'todas' trae todos.
             ruta_salida: ruta completa del archivo .xlsx. Si no se indica,
-                         se guarda en assets/downloads/productos_export.xlsx.
+                         se guarda en la carpeta Descargas del usuario.
 
         Retorna:
             dict: contrato estándar; incluye 'ruta', 'url' y 'es_plantilla'.
         """
         print("--- Exportando productos a Excel ---")
         try:
-            project_root = Path(__file__).resolve().parents[2]
             if not ruta_salida:
-                downloads_dir = project_root / "assets" / "downloads"
+                # Carpeta Descargas del usuario: siempre escribible, a
+                # diferencia de la carpeta de instalación (p. ej. Program
+                # Files en un ejecutable empaquetado), donde un usuario sin
+                # privilegios de administrador no puede crear archivos.
+                downloads_dir = Path.home() / "Downloads"
                 downloads_dir.mkdir(parents=True, exist_ok=True)
                 ruta_salida = str(downloads_dir / "productos_export.xlsx")
             else:
@@ -379,6 +406,7 @@ class ProductosService:
                     )
 
                 _aplicar_estilos_excel(ruta_salida)
+                _reflejar_en_assets_downloads(ruta_salida)
 
                 return {
                     "success": True,
@@ -390,6 +418,7 @@ class ProductosService:
 
             df.to_excel(ruta_salida, index=False, engine="openpyxl")
             _aplicar_estilos_excel(ruta_salida)
+            _reflejar_en_assets_downloads(ruta_salida)
 
             return {
                 "success": True,

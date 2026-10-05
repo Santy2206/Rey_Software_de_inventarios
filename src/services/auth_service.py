@@ -20,6 +20,8 @@ Reglas:
 
 import hashlib
 import json
+import os
+import sys
 import time
 from pathlib import Path
 
@@ -30,8 +32,26 @@ _current_usuario_id = None
 _current_usuario_rol = None
 _current_usuario_name = None
 
+
+def _session_file_path() -> Path:
+    """
+    Ubicacion del archivo de sesion local.
+
+    En un ejecutable empaquetado (instalado p. ej. en Program Files) el
+    usuario normal no tiene permiso de escritura junto al .exe, asi que se
+    usa %LOCALAPPDATA% (siempre escribible). En desarrollo (corriendo desde
+    codigo fuente) se mantiene en la raiz del proyecto por comodidad.
+    """
+    if getattr(sys, "frozen", False):
+        base = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
+        carpeta = Path(base) / "REY Inventarios"
+        carpeta.mkdir(parents=True, exist_ok=True)
+        return carpeta / ".rey_session.json"
+    return Path(__file__).resolve().parents[2] / ".rey_session.json"
+
+
 # Sesión local para conservar login al cambiar de modo (navegador <-> escritorio)
-_SESSION_FILE = Path(__file__).resolve().parents[2] / ".rey_session.json"
+_SESSION_FILE = _session_file_path()
 _SESSION_TTL_SECONDS = 12 * 60 * 60  # 12 horas
 
 

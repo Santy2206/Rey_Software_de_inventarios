@@ -8,6 +8,7 @@ import os
 import socket
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import webbrowser
@@ -19,6 +20,11 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[3]
 _WEB_HOST = "127.0.0.1"
 _WEB_PORT = 8550
 _WEB_URL = f"http://{_WEB_HOST}:{_WEB_PORT}"
+
+# Carpeta temporal del usuario: siempre es escribible, a diferencia de la
+# carpeta de instalación (p. ej. Program Files), donde un usuario sin
+# privilegios de administrador no puede crear archivos.
+_LOG_DIR = Path(tempfile.gettempdir())
 
 
 def _pythonw_exe() -> str:
@@ -62,14 +68,14 @@ def _wait_process_alive(process: subprocess.Popen, seconds: float = 3.5) -> bool
 
 
 def _launch_app(mode: str) -> subprocess.Popen:
+    log_file = _LOG_DIR / f".rey_tmp_launch_{mode}.log"
     if getattr(sys, "frozen", False):
         # Ejecutable empaquetado (REY.exe): se relanza el mismo .exe.
-        exe_dir = Path(sys.executable).resolve().parent
-        log_file = exe_dir / f".tmp_launch_{mode}.log"
+        run_cwd = Path(sys.executable).resolve().parent
         args = [sys.executable]
     else:
         main_script = _PROJECT_ROOT / "main.py"
-        log_file = _PROJECT_ROOT / f".tmp_launch_{mode}.log"
+        run_cwd = _PROJECT_ROOT
         args = [_pythonw_exe(), str(main_script)]
 
     if mode == "web":
@@ -97,7 +103,7 @@ def _launch_app(mode: str) -> subprocess.Popen:
     try:
         return subprocess.Popen(
             args,
-            cwd=str(log_file.parent),
+            cwd=str(run_cwd),
             env=env,
             startupinfo=startupinfo,
             creationflags=creationflags,
@@ -114,7 +120,7 @@ def _launch_app(mode: str) -> subprocess.Popen:
 
 
 def _read_log(mode: str) -> str:
-    log_file = _PROJECT_ROOT / f".tmp_launch_{mode}.log"
+    log_file = _LOG_DIR / f".rey_tmp_launch_{mode}.log"
     try:
         return log_file.read_text(encoding="utf-8", errors="replace").strip()
     except Exception:
@@ -321,8 +327,7 @@ class ViewSwitcher:
             actions=[ft.TextButton("Cancelar", on_click=lambda e: self._cerrar_dialogo(dlg))],
             actions_alignment=ft.MainAxisAlignment.END,
         )
-        self._page.overlay.append(dlg)
-        self._page.show_dialog(dlg)
+        self._abrir_dialogo(dlg)
 
         def _worker():
             try:
@@ -361,11 +366,7 @@ class ViewSwitcher:
                         break
                     time.sleep(0.25)
 
-                try:
-                    dlg.open = False
-                    self._page.update()
-                except Exception:
-                    pass
+                self._cerrar_dialogo(dlg)
             except Exception as ex:
                 try:
                     dlg.title = ft.Text("No se pudo cambiar de modo")
@@ -379,9 +380,26 @@ class ViewSwitcher:
 
         threading.Thread(target=_worker, daemon=True).start()
 
+    def _abrir_dialogo(self, dlg: ft.AlertDialog):
+        """Abre un AlertDialog con el API actual de Flet (show_dialog).
+
+        Flet 0.84: show_dialog gestiona su propio stack; no agregar también
+        a page.overlay o queda una copia duplicada que no se cierra y puede
+        dejar bloqueados los clics de diálogos abiertos después.
+        """
+        if hasattr(self._page, "show_dialog"):
+            self._page.show_dialog(dlg)
+        else:
+            if dlg not in self._page.overlay:
+                self._page.overlay.append(dlg)
+            dlg.open = True
+            self._page.update()
+
     def _cerrar_dialogo(self, dlg):
         try:
             dlg.open = False
+            if hasattr(self._page, "pop_dialog"):
+                self._page.pop_dialog()
             self._page.update()
         except Exception:
             pass
@@ -390,6 +408,8 @@ class ViewSwitcher:
     async def _cerrar_proceso(self, dlg):
         try:
             dlg.open = False
+            if hasattr(self._page, "pop_dialog"):
+                self._page.pop_dialog()
             self._page.update()
         except Exception:
             pass
