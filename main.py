@@ -37,8 +37,19 @@ def _resolve_mode() -> str:
     return "desktop"
 
 
+def _resolve_assets_dir() -> str:
+    """Devuelve la ruta absoluta de los assets (empaquetado o desarrollo)."""
+    if getattr(sys, "frozen", False):
+        return os.path.abspath(
+            os.path.join(os.path.dirname(sys.executable), "_internal", "assets")
+        )
+    return os.path.abspath("assets")
+
+
 def main():
     mode = _resolve_mode()
+    assets_dir = _resolve_assets_dir()
+    os.environ["FLET_ASSETS_DIR"] = assets_dir
     if mode == "web":
         # Servidor web en puerto fijo. Flet abrirá el navegador automáticamente.
         # Opcional: REY_HOST=0.0.0.0 permite abrir la app desde otros equipos de
@@ -52,13 +63,13 @@ def main():
         ft.run(
             App,
             view=None if headless else ft.AppView.WEB_BROWSER,
-            assets_dir="assets",
+            assets_dir=assets_dir,
             host=host,
             port=port,
             no_cdn=no_cdn,
         )
     else:
-        ft.run(App, view=ft.AppView.FLET_APP, assets_dir="assets")
+        ft.run(App, view=ft.AppView.FLET_APP, assets_dir=assets_dir)
 
 
 if __name__ == "__main__":
