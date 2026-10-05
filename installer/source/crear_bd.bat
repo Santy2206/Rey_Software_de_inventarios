@@ -51,6 +51,16 @@ REM usa IF NOT EXISTS) para traer tablas/columnas nuevas sin tocar los datos.
 if not errorlevel 1 (
   >>"%LOG%" echo Base de datos existente detectada. Se preservan los datos; solo se actualiza el schema.
   "%PSQL%" -h localhost -U rey_user -d rey_inventarios -v ON_ERROR_STOP=1 -q -f "%SCHEMA%" >>"%LOG%" 2>&1 || goto :error
+
+  REM Si la base quedo vacia (ej. una instalacion anterior fallo antes de
+  REM sembrar los datos), se completa con los datos de ejemplo. Si ya tiene
+  REM usuarios reales, se deja intacta.
+  for /f %%N in ('"%PSQL%" -h localhost -U rey_user -d rey_inventarios -tAc "SELECT count(*) FROM usuarios"') do set "USUARIOS_COUNT=%%N"
+  if "!USUARIOS_COUNT!"=="0" (
+    >>"%LOG%" echo La tabla usuarios esta vacia ^(instalacion anterior incompleta^). Sembrando datos iniciales.
+    "%PSQL%" -h localhost -U rey_user -d rey_inventarios -v ON_ERROR_STOP=1 -q -f "%SEED%" >>"%LOG%" 2>&1 || goto :error
+  )
+
   >>"%LOG%" echo [%date% %time%] Base de datos actualizada (datos existentes preservados).
   exit /b 0
 )
