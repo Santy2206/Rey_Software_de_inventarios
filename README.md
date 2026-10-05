@@ -65,7 +65,8 @@ REY_SOFTWARE_DE_INVENTARIOS/
 │   │   ├── 02_seed.sql          # Datos iniciales de prueba
 │   │   └── prueba_crud.sql      # Scripts de prueba
 │   └── windows/
-│       └── construir_ejecutable.bat  # Compila el .exe con flet pack
+│       ├── construir_ejecutable.bat  # Compila el .exe con flet pack (paquete .zip)
+│       └── construir_instalador.bat  # Compila el .exe y genera REY_Setup.exe (Inno Setup)
 ├── installer/
 │   ├── REY_Setup.iss            # Script de Inno Setup
 │   └── source/                  # Archivos empaquetados en el setup
@@ -83,21 +84,21 @@ REY_SOFTWARE_DE_INVENTARIOS/
 
 ## Instalación para usuarios finales
 
-1. Descargue `dist/REY_Setup.exe` (no se incluye en el repositorio por su tamaño; se genera localmente).
+1. Descargue `REY_Setup.exe` desde la sección [Releases](https://github.com/Santy2206/Rey_Software_de_inventarios/releases) del repositorio (no se incluye en el repositorio por su tamaño; también se puede generar localmente, ver [Construcción del instalador](#construcción-del-instalador)).
 2. Ejecute `REY_Setup.exe` como administrador.
 3. El instalador hará lo siguiente:
    - Instalará PostgreSQL 16 en silencio si no está instalado (contraseña por defecto: `UDMVnxjZVgDT`).
    - Si PostgreSQL ya está instalado, pedirá la contraseña del usuario `postgres`. Tras 3 intentos fallidos ofrecerá reinstalar PostgreSQL con la contraseña por defecto.
-   - Creará o recreará la base de datos `rey_inventarios` y el usuario `rey_user`.
-   - Aplicará el schema y los datos de prueba.
+   - Creará el usuario `rey_user` y la base de datos `rey_inventarios` si es la primera instalación, aplicando el schema y los datos de prueba.
+   - Si `rey_inventarios` ya existe (reinstalación/actualización), **preserva los datos**: solo vuelve a aplicar el schema (es idempotente) para traer tablas o columnas nuevas, sin tocar los registros existentes ni repetir los datos de prueba.
    - Copiará la aplicación a `C:\Program Files\REY Inventarios`.
    - Creará el acceso directo en el Escritorio y el menú Inicio.
    - Ofrecerá abrir REY al finalizar.
-4. Ingrese con uno de los usuarios de prueba:
+4. Ingrese con uno de los usuarios de prueba (solo en una instalación nueva):
    - `admin / admin123` (administrador)
    - `empleado / empleado123` (empleado)
 
-> **Nota:** La reinstalación automática de PostgreSQL borra todas las bases de datos existentes en ese servidor.
+> **Nota:** La reinstalación automática de PostgreSQL (tras 3 intentos fallidos de contraseña) sí borra todas las bases de datos existentes en ese servidor. La actualización normal de REY (cuando la contraseña de `postgres` es correcta) no borra datos.
 
 ## Instalación para desarrolladores
 
@@ -176,28 +177,23 @@ Para sincronizar los datos locales con Supabase, usar el botón "Sincronizar aho
 
 ## Construcción del instalador
 
-1. Generar el ejecutable empaquetado:
+Requiere [Inno Setup 6](https://jrsoftware.org/isdl.php) instalado.
+
+Opción automática — doble clic en `deploy\windows\construir_instalador.bat`, o desde la terminal:
 
 ```bash
-.venv\Scripts\activate
-flet pack main.py --name REY_Inventarios --icon assets/icon.ico --add-data "assets:assets" --onedir --pyinstaller-build-args="--collect-data=flet_web" --product-name "REY Inventarios" --file-description "Software de inventarios multibodega" --product-version 2.0.0 --file-version 2.0.0.0 --company-name "SENA ADSO Ficha 3186627" --copyright "2026 REY Inventarios" -y
+deploy\windows\construir_instalador.bat
 ```
 
-2. Copiar el resultado al instalador:
+El script hace todo el proceso: reempaqueta la app con `flet pack`, limpia cualquier sesión de login que haya quedado del build anterior, copia el resultado a `installer\source\REY_Inventarios` y compila `installer\REY_Setup.iss` con Inno Setup. El instalador final queda en `dist\REY_Setup.exe`.
 
-```bash
-xcopy /E /I /Y dist\REY_Inventarios installer\source\REY_Inventarios
-```
+> `installer/source/postgresql-win-x64.exe` debe existir (instalador oficial de PostgreSQL 16 para Windows, se descarga de EnterpriseDB) — no se incluye en el repositorio por su tamaño.
 
-3. Colocar `postgresql-win-x64.exe` en `installer/source/`. Se puede descargar de EnterpriseDB.
+Pasos manuales equivalentes, por si se necesita ajustar algo puntual:
 
-4. Compilar el setup con Inno Setup:
-
-```bash
-"C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer\REY_Setup.iss
-```
-
-El instalador final se genera en `dist/REY_Setup.exe`.
+1. Empaquetar con `flet pack` (ver `deploy\windows\construir_instalador.bat` para los parámetros exactos).
+2. Copiar `dist\REY_Inventarios` a `installer\source\REY_Inventarios`.
+3. Compilar: `"C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer\REY_Setup.iss`.
 
 ## Icono
 
