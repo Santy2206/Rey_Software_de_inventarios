@@ -59,7 +59,7 @@ class _ReportesView(ft.Container):
         super().__init__()
 
         self.expand = True
-        self.bgcolor = "#f5f6fa"
+        self.bgcolor="#F5F6FA"
         self.padding = 20
 
         # ── Estado ─────────────────────────────────────────────────────────
@@ -160,24 +160,21 @@ class _ReportesView(ft.Container):
                             self._dropdown_anio,
                             ft.ElevatedButton(
                                 "Generar Reporte",
-                                bgcolor="#d32f2f",
-                                color="white",
+                                bgcolor="#FFC200", color="black",
                                 height=45,
                                 on_click=self._generar_reporte,
                             ),
                             ft.ElevatedButton(
                                 "Exportar CSV",
                                 icon=ft.Icons.DOWNLOAD,
-                                bgcolor="#4caf50",
-                                color="white",
+                                bgcolor="#FFC200", color="black",
                                 height=45,
                                 on_click=lambda e: self._exportar("csv"),
                             ),
                             ft.ElevatedButton(
                                 "Exportar Excel",
                                 icon=ft.Icons.FILE_DOWNLOAD,
-                                bgcolor="#2196F3",
-                                color="white",
+                                bgcolor="#FFC200", color="black",
                                 height=45,
                                 on_click=lambda e: self._exportar("xlsx"),
                             ),
@@ -191,7 +188,7 @@ class _ReportesView(ft.Container):
         contenedor = ft.Container(
             padding=12,
             border_radius=10,
-            bgcolor="#f8f8f8",
+            bgcolor="#F8F8F8",
             border=ft.border.all(1, "#e0e0e0"),
             content=ft.Row(
                 spacing=8,
@@ -204,11 +201,11 @@ class _ReportesView(ft.Container):
 
         def _seleccionar(e):
             self._tipo_seleccionado = titulo
-            contenedor.bgcolor = "#e3f2fd"
+            contenedor.bgcolor="#E3F2FD"
             contenedor.border = ft.border.all(2, color)
             for otro in self._botones_reporte:
                 if otro is not contenedor:
-                    otro.bgcolor = "#f8f8f8"
+                    otro.bgcolor="#F8F8F8"
                     otro.border = ft.border.all(1, "#e0e0e0")
             self.update()
 
@@ -335,6 +332,6 @@ class _ReportesView(ft.Container):
     # ============================================================
     def _mostrar_snack(self, mensaje: str, error: bool = False):
         self._snackbar.content = ft.Text(mensaje, color="white")
-        self._snackbar.bgcolor = "#d32f2f" if error else "#388e3c"
+        self._snackbar.bgcolor="#FFC200" if error else "#388e3c"
         self._snackbar.open = True
         self.page.update()

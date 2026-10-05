@@ -5,8 +5,25 @@ from src.services.bodegas_service import BodegasService
 from src.ui.components.status_header import StatusHeader
 from src.ui.components.page_header import PageHeader
 
-_CARD_COLORS = ["#f5b400", "#c2185b", "#2563eb", "#16a34a", "#7c3aed"]
+_CARD_COLORS = [
+    "#FFC200",
+    "#FFD700",
+    "#FFB300",
+    "#FF8F00",
+    "#E6B800",
+    "#D4A000",
+    "#B8860B",
+]
 _PALABRA_ELIMINAR = "eliminar"
+
+
+def _text_color_for(bg: str) -> str:
+    bg = bg.lstrip("#")
+    r = int(bg[0:2], 16)
+    g = int(bg[2:4], 16)
+    b = int(bg[4:6], 16)
+    luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255
+    return "white" if luminance < 0.5 else "black"
 
 
 def BodegasView():
@@ -18,7 +35,7 @@ class _BodegasView(ft.Container):
     def __init__(self):
         super().__init__()
         self.expand = True
-        self.bgcolor = "#f5f6fa"
+        self.bgcolor="#F5F6FA"
         self.padding = 20
 
         # ── Estado interno ──────────────────────────────────────────────────
@@ -143,7 +160,7 @@ class _BodegasView(ft.Container):
             color="grey",
             width=360,
         )
-        self._error_dialogo = ft.Text("", size=12, color="#d32f2f", width=360, visible=False)
+        self._error_dialogo = ft.Text("", size=12, color="#FFC200", width=360, visible=False)
 
         # ── Barra de estado
         self._status_header = StatusHeader()
@@ -299,7 +316,7 @@ class _BodegasView(ft.Container):
                 ft.ElevatedButton(
                     "Crear Bodega",
                     icon=ft.Icons.ADD,
-                    bgcolor="#9eff8f",
+                    bgcolor="#FFC200",
                     color="black",
                     style=ft.ButtonStyle(
                         shape=ft.RoundedRectangleBorder(radius=10)
@@ -314,6 +331,7 @@ class _BodegasView(ft.Container):
     # ─────────────────────────────────────────────────────────────────────────
 
     def _warehouse_card(self, bodega: dict, color: str):
+        text_color = _text_color_for(color)
         nombre = bodega.get("nombre", "Sin nombre")
         tipo = bodega.get("tipo", "—")
         cuentas = (bodega.get("cuentas_elisa") or "").strip()
@@ -340,7 +358,7 @@ class _BodegasView(ft.Container):
                                         width=40,
                                         height=40,
                                         border_radius=10,
-                                        bgcolor="#f0f0f0",
+                                        bgcolor="#F0F0F0",
                                         alignment=ft.Alignment(0, 0),
                                         content=ft.Icon(
                                             ft.Icons.WAREHOUSE, color=color
@@ -360,7 +378,7 @@ class _BodegasView(ft.Container):
                                 ],
                             ),
                             ft.Container(
-                                bgcolor="#f7f7f7",
+                                bgcolor="#F7F7F7",
                                 padding=8,
                                 border_radius=10,
                                 content=ft.Icon(
@@ -392,7 +410,7 @@ class _BodegasView(ft.Container):
                                 "Editar",
                                 icon=ft.Icons.EDIT,
                                 bgcolor=color,
-                                color="white",
+                                color=text_color,
                                 expand=True,
                                 style=ft.ButtonStyle(
                                     shape=ft.RoundedRectangleBorder(radius=8)
@@ -412,7 +430,7 @@ class _BodegasView(ft.Container):
                             ),
                             ft.IconButton(
                                 icon=ft.Icons.DELETE_OUTLINE,
-                                icon_color="red",
+                                icon_color="#FFC200",
                                 tooltip="Eliminar bodega",
                                 on_click=lambda e, bid=bodega[
                                     "id"
@@ -449,7 +467,7 @@ class _BodegasView(ft.Container):
                                 width=60,
                                 height=60,
                                 border_radius=30,
-                                bgcolor="#f3f3f3",
+                                bgcolor="#F3F3F3",
                                 alignment=ft.Alignment(0, 0),
                                 content=ft.Icon(ft.Icons.ADD, size=30, color="grey"),
                             ),
@@ -466,7 +484,7 @@ class _BodegasView(ft.Container):
                             ),
                             ft.ElevatedButton(
                                 "Crear bodega",
-                                bgcolor="#ffd400",
+                                bgcolor="#FFC200",
                                 color="black",
                                 on_click=self._abrir_dialogo_crear,
                             ),
@@ -541,7 +559,7 @@ class _BodegasView(ft.Container):
                 ft.TextButton("Cancelar", on_click=self._cerrar_dialogo),
                 ft.ElevatedButton(
                     "Guardar",
-                    bgcolor="#9eff8f",
+                    bgcolor="#FFC200",
                     color="black",
                     on_click=self._guardar_bodega,
                 ),
@@ -584,7 +602,7 @@ class _BodegasView(ft.Container):
                 ft.TextButton("Cancelar", on_click=self._cerrar_dialogo),
                 ft.ElevatedButton(
                     "Guardar",
-                    bgcolor="#9eff8f",
+                    bgcolor="#FFC200",
                     color="black",
                     on_click=self._guardar_bodega,
                 ),
@@ -624,8 +642,7 @@ class _BodegasView(ft.Container):
                 ft.TextButton("Cancelar", on_click=self._cerrar_dialogo_duplicar),
                 ft.ElevatedButton(
                     "Duplicar",
-                    bgcolor="#2196F3",
-                    color="white",
+                    bgcolor="#FFC200", color="black",
                     on_click=self._confirmar_duplicar_bodega,
                 ),
             ],
@@ -695,8 +712,7 @@ class _BodegasView(ft.Container):
                 ft.TextButton("Cancelar", on_click=self._cerrar_dialogo_eliminar),
                 ft.ElevatedButton(
                     "Eliminar definitivamente",
-                    bgcolor="#d32f2f",
-                    color="white",
+                    bgcolor="#FFC200", color="black",
                     on_click=self._confirmar_eliminar_bodega,
                 ),
             ],
@@ -826,6 +842,6 @@ class _BodegasView(ft.Container):
     def _mostrar_snack(self, mensaje: str, error: bool = False):
         # FIX 2: SnackBar está en page.overlay, no en el Column — ahora funciona
         self._snackbar.content = ft.Text(mensaje, color="white")
-        self._snackbar.bgcolor = "#d32f2f" if error else "#388e3c"
+        self._snackbar.bgcolor="#FFC200" if error else "#388e3c"
         self._snackbar.open = True
         self.page.update()

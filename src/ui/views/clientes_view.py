@@ -31,7 +31,7 @@ class _ClientesView(ft.Container):
     def __init__(self):
         super().__init__()
         self.expand = True
-        self.bgcolor = "#f5f6fa"
+        self.bgcolor="#F5F6FA"
         self.padding = 20
 
         # ── Estado interno ───────────────────────────────────────────────────
@@ -126,7 +126,7 @@ class _ClientesView(ft.Container):
                 ft.TextButton("Cancelar", on_click=self._cerrar_dialogo),
                 ft.ElevatedButton(
                     "Guardar",
-                    bgcolor="#9eff8f",
+                    bgcolor="#FFC200",
                     color="black",
                     on_click=self._guardar_cliente,
                 ),
@@ -231,7 +231,7 @@ class _ClientesView(ft.Container):
                                     ),
                                     ft.IconButton(
                                         icon=ft.Icons.DELETE_OUTLINE,
-                                        icon_color="red",
+                                        icon_color="#FFC200",
                                         tooltip="Eliminar cliente",
                                         on_click=lambda e, cid=cliente["id"], nom=nombre: self._eliminar_cliente(cid, nom),
                                     ),
@@ -261,7 +261,7 @@ class _ClientesView(ft.Container):
                 ft.ElevatedButton(
                     "Crear Cliente",
                     icon=ft.Icons.ADD,
-                    bgcolor="#9eff8f",
+                    bgcolor="#FFC200",
                     color="black",
                     on_click=self._abrir_dialogo_crear,
                 ),
@@ -394,6 +394,6 @@ class _ClientesView(ft.Container):
 
     def _mostrar_snack(self, mensaje: str, error: bool = False):
         self._snackbar.content = ft.Text(mensaje, color="white")
-        self._snackbar.bgcolor = "#d32f2f" if error else "#388e3c"
+        self._snackbar.bgcolor="#FFC200" if error else "#388e3c"
         self._snackbar.open = True
         self.page.update()

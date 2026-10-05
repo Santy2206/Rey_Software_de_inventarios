@@ -17,14 +17,43 @@ class Sidebar(ft.Container):
         self._items: dict[str, ft.Container] = {}
 
         menu_controls = [
-            ft.Column(
-                spacing=5,
+            ft.Row(
+                alignment=ft.MainAxisAlignment.CENTER,
                 controls=[
-                    ft.Text("👑 REY", size=24, weight="bold", color="white"),
-                    ft.Text("Inventarios", color="white70", size=12),
+                    ft.Container(
+                        border=ft.border.all(2, "#FFC200"),
+                        border_radius=12,
+                        padding=5,
+                        bgcolor="#000000",
+                        content=ft.Column(
+                            spacing=0,
+                            horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                            controls=[
+                                ft.Image(
+                                    src="corona.png",
+                                    width=55,
+                                    height=28,
+                                    fit=ft.BoxFit.CONTAIN,
+                                ),
+                                ft.Text(
+                                    "REY",
+                                    size=20,
+                                    weight="bold",
+                                    color="#FFC200",
+                                ),
+                                ft.Text(
+                                    "SOFTWARE DE INVENTARIOS",
+                                    size=8,
+                                    weight="bold",
+                                    color="#FFC200",
+                                    text_align=ft.TextAlign.CENTER,
+                                ),
+                            ],
+                        ),
+                    ),
                 ],
             ),
-            ft.Divider(color="white24"),
+            ft.Divider(color="#FFC200", height=1),
             self._item(ft.Icons.DASHBOARD, "Dashboard", "dashboard"),
             self._item(ft.Icons.WAREHOUSE, "Bodegas", "BODEGAS"),
             self._item(ft.Icons.INVENTORY_2, "Productos", "PRODUCTOS"),
@@ -40,18 +69,18 @@ class Sidebar(ft.Container):
                 "Cerrar sesión",
                 icon=ft.Icons.LOGOUT,
                 width=180,
-                bgcolor="#8b0015",
-                color="white",
+                bgcolor="#FFC200", color="black",
                 on_click=lambda _: self._on_logout(),
             ),
         ]
 
         self.width = 220
-        self.bgcolor = "#b3001b"
+        self.bgcolor="#000000"
         self.padding = 20
         self.content = ft.Column(
             expand=True,
             spacing=20,
+            scroll=ft.ScrollMode.AUTO,
             controls=menu_controls,
         )
 
@@ -82,7 +111,7 @@ class Sidebar(ft.Container):
         for name, container in self._items.items():
             label = container.content.controls[1]
             if name == page_name:
-                container.bgcolor = "#7a0016"  # más oscuro que el sidebar
+                container.bgcolor="#1A1A1A"  # más oscuro que el sidebar
                 label.weight = ft.FontWeight.BOLD
             else:
                 container.bgcolor = None

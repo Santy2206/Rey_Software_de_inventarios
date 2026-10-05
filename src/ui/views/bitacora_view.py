@@ -29,10 +29,10 @@ from src.ui.components.status_header import StatusHeader
 from src.ui.components.page_header import PageHeader
 
 _COLORES_ACCION = {
-    "LOGIN_FALLIDO": ("#FEE2E2", "#B91C1C"),
-    "ELIMINACION": ("#FEE2E2", "#B91C1C"),
+    "LOGIN_FALLIDO": ("#F5F5DC", "#FFC200"),
+    "ELIMINACION": ("#F5F5DC", "#FFC200"),
     "CAMBIO_ROL": ("#EDE9FE", "#6D28D9"),
-    "ANULACION_VENTA": ("#FEE2E2", "#B91C1C"),
+    "ANULACION_VENTA": ("#F5F5DC", "#FFC200"),
     "AJUSTE_STOCK": ("#DBEAFE", "#1D4ED8"),
     "BAJA_STOCK": ("#FEF3C7", "#B45309"),
     "CAMBIO_PRECIO": ("#DCFCE7", "#15803D"),
@@ -40,7 +40,7 @@ _COLORES_ACCION = {
     # Colores para registros antiguos con acciones fuera del catálogo
     "LOGIN": ("#DBEAFE", "#1D4ED8"),
     "ENTRADA": ("#DCFCE7", "#15803D"),
-    "SALIDA": ("#FEE2E2", "#B91C1C"),
+    "SALIDA": ("#F5F5DC", "#FFC200"),
     "BAJA": ("#FEF3C7", "#B45309"),
     "MOVIMIENTO": ("#DBEAFE", "#1D4ED8"),
     "PRODUCTO": ("#EDE9FE", "#6D28D9"),
@@ -60,7 +60,7 @@ class _BitacoraView(ft.Container):
         super().__init__()
 
         self.expand = True
-        self.bgcolor = "#f5f6fa"
+        self.bgcolor="#F5F6FA"
         self.padding = 20
 
         self._registros: list[dict] = []
@@ -333,6 +333,6 @@ class _BitacoraView(ft.Container):
 
     def _mostrar_snack(self, mensaje: str, error: bool = False):
         self._snackbar.content = ft.Text(mensaje, color="white")
-        self._snackbar.bgcolor = "#d32f2f" if error else "#388e3c"
+        self._snackbar.bgcolor="#FFC200" if error else "#388e3c"
         self._snackbar.open = True
         self.page.update()
