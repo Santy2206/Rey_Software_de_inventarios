@@ -171,13 +171,40 @@ class StatusHeader:
                 pass
         return _on_progress
 
+    def _abrir_dialogo(self, dlg: ft.AlertDialog):
+        """Abre un AlertDialog con el API actual de Flet (show_dialog).
+
+        Flet 0.84: show_dialog gestiona su propio stack; no agregar también
+        a page.overlay o queda una copia duplicada que no se cierra.
+        """
+        if hasattr(self._page, "show_dialog"):
+            self._page.show_dialog(dlg)
+        else:
+            if dlg not in self._page.overlay:
+                self._page.overlay.append(dlg)
+            dlg.open = True
+            self._page.update()
+
+    def _cerrar_dialogo(self, dlg: ft.AlertDialog):
+        dlg.open = False
+        try:
+            if hasattr(self._page, "pop_dialog"):
+                self._page.pop_dialog()
+        except Exception:
+            pass
+        try:
+            if dlg in self._page.overlay:
+                self._page.overlay.remove(dlg)
+        except Exception:
+            pass
+        self._page.update()
+
     def _on_sincronizar(self, _e):
         if not self._page or self._btn_sync.disabled:
             return
 
         dlg, barra, texto, detalle = self._dialogo_sync()
-        self._page.overlay.append(dlg)
-        self._page.show_dialog(dlg)
+        self._abrir_dialogo(dlg)
 
         def _on_result(result):
             if not self._page:
@@ -230,22 +257,15 @@ class StatusHeader:
             ],
             actions_alignment=ft.MainAxisAlignment.END,
         )
-        self._page.overlay.append(dlg)
-        self._page.show_dialog(dlg)
-
-    def _cerrar_dialogo(self, dlg):
-        dlg.open = False
-        self._page.update()
+        self._abrir_dialogo(dlg)
 
     def _sincronizar_desde_pendientes(self, dlg):
         if not self._page:
             return
-        dlg.open = False
-        self._page.update()
+        self._cerrar_dialogo(dlg)
 
         loading, barra, texto, detalle = self._dialogo_sync()
-        self._page.overlay.append(loading)
-        self._page.show_dialog(loading)
+        self._abrir_dialogo(loading)
 
         def _on_result(result):
             if not self._page:
@@ -265,14 +285,7 @@ class StatusHeader:
             mensaje = result.get("message", "Sincronización finalizada")
 
             # Cerrar diálogo de carga
-            dlg.open = False
-            try:
-                self._page.dialog = None
-            except Exception:
-                pass
-            if dlg in self._page.overlay:
-                self._page.overlay.remove(dlg)
-            self._page.update()
+            self._cerrar_dialogo(dlg)
 
             # Notificación tipo Toast
             sb = ft.SnackBar(
