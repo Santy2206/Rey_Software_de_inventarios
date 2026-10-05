@@ -264,13 +264,12 @@ class StatusHeader:
             success = result.get("success", False)
             mensaje = result.get("message", "Sincronización finalizada")
 
-            # Cerrar diálogo de carga (pop_dialog es lo correcto para
-            # diálogos abiertos con show_dialog en Flet 0.84; poner
-            # open=False + page.update() dejaba el modal visible).
+            # Cerrar diálogo de carga
+            dlg.open = False
             try:
-                self._page.pop_dialog()
+                self._page.dialog = None
             except Exception:
-                dlg.open = False
+                pass
             if dlg in self._page.overlay:
                 self._page.overlay.remove(dlg)
             self._page.update()
@@ -282,7 +281,9 @@ class StatusHeader:
                 show_close_icon=True,
                 duration=5000,
             )
-            self._page.show_dialog(sb)
+            sb.open = True
+            self._page.overlay.append(sb)
+            self._page.update()
         finally:
             # Recargar estado en hilo aparte: no bloquear el cierre del
             # diálogo con las consultas de pendientes.
