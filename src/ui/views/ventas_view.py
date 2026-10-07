@@ -242,9 +242,6 @@ class _VentasView(ft.Container):
         )
 
     def did_mount(self):
-        self.page.overlay.append(self._dialog_cliente)
-        self.page.overlay.append(self._dialog_anular)
-        self.page.overlay.append(self._dialog_importar)
         self.page.overlay.append(self._snackbar)
         self.page.update()
         self._status_header.load(self.page)
@@ -589,16 +586,38 @@ class _VentasView(ft.Container):
         if self.page:
             self.page.update()
 
+    def _abrir_dialogo(self, dlg: ft.AlertDialog):
+        """Abre un AlertDialog con el API actual de Flet (show_dialog).
+
+        Flet 0.84: show_dialog gestiona su propio stack; no agregar también
+        a page.overlay o queda una copia duplicada que no se cierra y puede
+        dejar bloqueados los clics de diálogos abiertos después.
+        """
+        if hasattr(self.page, "show_dialog"):
+            self.page.show_dialog(dlg)
+        else:
+            if dlg not in self.page.overlay:
+                self.page.overlay.append(dlg)
+            dlg.open = True
+            self.page.update()
+
+    def _cerrar_dialogo_generico(self, dlg: ft.AlertDialog):
+        dlg.open = False
+        try:
+            if hasattr(self.page, "pop_dialog"):
+                self.page.pop_dialog()
+        except Exception:
+            pass
+        self.page.update()
+
     def _abrir_dialogo_cliente(self, e=None):
         self._campo_nombre_cliente.value = ""
         self._campo_telefono_cliente.value = ""
         self._campo_email_cliente.value = ""
-        self._dialog_cliente.open = True
-        self.page.update()
+        self._abrir_dialogo(self._dialog_cliente)
 
     def _cerrar_dialogo_cliente(self, e=None):
-        self._dialog_cliente.open = False
-        self.page.update()
+        self._cerrar_dialogo_generico(self._dialog_cliente)
 
     def _guardar_cliente(self, e=None):
         nombre = (self._campo_nombre_cliente.value or "").strip()
@@ -676,13 +695,11 @@ class _VentasView(ft.Container):
 
     def _abrir_dialogo_anular(self, venta: dict):
         self._venta_a_anular = venta
-        self._dialog_anular.open = True
-        self.page.update()
+        self._abrir_dialogo(self._dialog_anular)
 
     def _cerrar_dialogo_anular(self, e=None):
         self._venta_a_anular = None
-        self._dialog_anular.open = False
-        self.page.update()
+        self._cerrar_dialogo_generico(self._dialog_anular)
 
     def _confirmar_anulacion(self, e=None):
         venta = self._venta_a_anular
@@ -722,12 +739,10 @@ class _VentasView(ft.Container):
     # ---------------- Importación Elisa ----------------
     def _abrir_dialogo_importar(self, e=None):
         self._import_ruta.value = ""
-        self._dialog_importar.open = True
-        self.page.update()
+        self._abrir_dialogo(self._dialog_importar)
 
     def _cerrar_dialogo_importar(self, e=None):
-        self._dialog_importar.open = False
-        self.page.update()
+        self._cerrar_dialogo_generico(self._dialog_importar)
 
     def _abrir_selector_archivo(self, e=None):
         """Abre el explorador de archivos nativo."""
@@ -855,8 +870,7 @@ class _VentasView(ft.Container):
             )
             return
 
-        self._dialog_importar.open = False
-        self.page.update()
+        self._cerrar_dialogo_generico(self._dialog_importar)
 
         def _worker():
             res = VentasImportService.importar_raw(ruta)

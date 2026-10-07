@@ -20,6 +20,19 @@ import sys
 if getattr(sys, "frozen", False):
     os.chdir(os.path.dirname(sys.executable))
 
+# La consola del ejecutable empaquetado usa la codificación de Windows
+# (cp1252 en equipos en español), que no soporta caracteres como "→" que
+# se usan en varios mensajes de log (ej: "stock: 10 → 15"). Sin esto,
+# cualquier print() con esos caracteres lanza UnicodeEncodeError y tumba
+# la operación que lo dispare (crear movimiento, cambiar rol, etc.).
+for _stream_name in ("stdout", "stderr"):
+    _stream = getattr(sys, _stream_name, None)
+    if _stream is not None and hasattr(_stream, "reconfigure"):
+        try:
+            _stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
 import flet as ft
 from src.ui.app import App
 

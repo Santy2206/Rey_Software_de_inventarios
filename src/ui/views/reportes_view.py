@@ -18,6 +18,8 @@ Reglas:
     - SIN ft.app() — esta vista es montada por dashboard_view.py.
 """
 
+import os
+import subprocess
 import threading
 
 import flet as ft
@@ -302,6 +304,19 @@ class _ReportesView(ft.Container):
                 resultado.get("message", ""), error=not resultado.get("success")
             )
             self.page.update()
+
+            if resultado.get("success"):
+                ruta = resultado.get("data")
+                if ruta:
+                    try:
+                        if formato == "csv":
+                            # Forzar Bloc de notas: la asociación de .csv del
+                            # sistema suele ser Excel, no lo que se pidió aquí.
+                            subprocess.Popen(["notepad.exe", ruta])
+                        else:
+                            os.startfile(ruta)
+                    except Exception as ex:
+                        print(f" No se pudo abrir el archivo exportado: {ex}")
 
         threading.Thread(target=_worker, daemon=True).start()
 

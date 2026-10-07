@@ -19,7 +19,9 @@ import threading
 from pathlib import Path
 
 import flet as ft
+from src.core.local_db import run_query
 from src.services.auth_service import AuthService
+from src.sync.sync_service import SyncService
 from src.ui.views.login_view import LoginView
 from src.ui.views.dashboard_view import DashboardView
 
@@ -27,6 +29,13 @@ from src.ui.views.dashboard_view import DashboardView
 def App(page: ft.Page):
     page.title = "REY Software de Inventarios"
     page.padding = 0
+
+    # El diseño de la app usa fondos claros hardcodeados (tarjetas blancas,
+    # etc.) pero varios textos no fijan color explícito. Sin esto, Flet usa
+    # el tema del sistema operativo (page.theme_mode por defecto es SYSTEM):
+    # en Windows con modo oscuro, ese texto se renderiza en gris claro,
+    # prácticamente ilegible sobre los fondos blancos.
+    page.theme_mode = ft.ThemeMode.LIGHT
 
     # Hacer que page.update() sea seguro desde hilos de fondo:
     # si se llama desde un thread secundario, se programa en el loop de UI.
@@ -100,9 +109,72 @@ def App(page: ft.Page):
         AuthService.logout()
         navigate_to("login")
 
-    # Restaurar sesión local al arrancar (evita re-login al cambiar de modo)
-    session = AuthService.restore_session()
-    if session:
-        navigate_to("dashboard", rol=session["rol"], user_id=session["id"])
-    else:
-        navigate_to("login")
+    def mostrar_pantalla_carga(mensaje: str):
+        page.clean()
+        page.bgcolor = "#000000"
+        page.vertical_alignment = ft.MainAxisAlignment.CENTER
+        page.horizontal_alignment = ft.CrossAxisAlignment.CENTER
+        page.add(
+            ft.Column(
+                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                controls=[
+                    ft.ProgressRing(color="#FFC200"),
+                    ft.Container(height=15),
+                    ft.Text(mensaje, color="white", size=14),
+                ],
+            )
+        )
+        page.update()
+
+    def _hay_usuarios_locales() -> bool:
+        try:
+            fila = run_query("SELECT 1 FROM usuarios LIMIT 1", fetch_one=True)
+            return bool(fila)
+        except Exception:
+            # Si ni siquiera se puede consultar, dejar que el flujo normal
+            # (login) muestre el error real en vez de bloquear el arranque.
+            return True
+
+    def _ir_a_sesion():
+        session = AuthService.restore_session()
+        if session:
+            navigate_to("dashboard", rol=session["rol"], user_id=session["id"])
+        else:
+            navigate_to("login")
+
+    async def _terminar_arranque(resultado: dict):
+        if not resultado.get("success") or not _hay_usuarios_locales():
+            page.snack_bar = ft.SnackBar(
+                content=ft.Text(
+                    "No se pudo descargar la configuración inicial desde la "
+                    "nube. Verifica tu conexión a internet e intenta de nuevo."
+                ),
+                bgcolor="#FFC200",
+                show_close_icon=True,
+            )
+            page.snack_bar.open = True
+        _ir_a_sesion()
+
+    def _arrancar():
+        """
+        Primer arranque en un dispositivo nuevo: si la base local no tiene
+        usuarios todavía, este equipo nunca se configuró. En vez de operar
+        con una base vacía, se descargan los datos reales (usuarios,
+        bodegas, clientes, productos, ...) ya existentes en el proyecto
+        Supabase compartido, para que este dispositivo arranque con la
+        misma información que los demás en vez de datos de ejemplo locales
+        que chocarían al sincronizar.
+        """
+        if _hay_usuarios_locales():
+            _ir_a_sesion()
+            return
+
+        mostrar_pantalla_carga("Configurando por primera vez...")
+
+        def _worker():
+            resultado = SyncService.descargar_inicial()
+            page.run_task(_terminar_arranque, resultado)
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+    _arrancar()

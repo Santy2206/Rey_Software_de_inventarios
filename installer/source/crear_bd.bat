@@ -27,7 +27,6 @@ if not defined PSQL goto :no_postgres
 
 set "PGPASSWORD=%PGPASS%"
 set "SCHEMA=%BASEPATH%base_de_datos\01_schema.sql"
-set "SEED=%BASEPATH%base_de_datos\02_seed.sql"
 set "TMP_OUT=%TEMP%\rey_crear_bd_%RANDOM%.tmp"
 
 REM Verificar conexion como postgres
@@ -56,7 +55,14 @@ del "%TMP_OUT%" >nul 2>&1
 
 if "%DB_EXISTS%"=="1" goto :actualizar_existente
 
-REM ---- Primera instalacion: crear base de datos, schema y datos de ejemplo ----
+REM ---- Primera instalacion: crear base de datos y schema ----
+REM NO se siembran datos de ejemplo aqui: este dispositivo sincroniza con
+REM un proyecto Supabase compartido por todos los equipos, y la app baja
+REM los usuarios/bodegas/clientes/productos reales ya existentes en la
+REM nube al primer arranque (ver SyncService.descargar_inicial). Sembrar
+REM datos de ejemplo locales con ids propios chocaria con esos datos
+REM reales al sincronizar (nombre/cedula duplicados, FKs a bodegas que
+REM solo existen localmente, etc.).
 >>"%LOG%" echo Base de datos no encontrada. Creando instalacion nueva...
 "%PSQL%" -h localhost -U postgres -c "CREATE DATABASE rey_inventarios OWNER rey_user ENCODING 'UTF8' LC_COLLATE='es_CO.UTF-8' LC_CTYPE='es_CO.UTF-8' TEMPLATE template0;" >>"%LOG%" 2>&1
 if errorlevel 1 goto :error
@@ -65,11 +71,7 @@ if errorlevel 1 goto :error
 "%PSQL%" -h localhost -U rey_user -d rey_inventarios -v ON_ERROR_STOP=1 -q -f "%SCHEMA%" >>"%LOG%" 2>&1
 if errorlevel 1 goto :error
 
->>"%LOG%" echo Sembrando datos iniciales...
-"%PSQL%" -h localhost -U rey_user -d rey_inventarios -v ON_ERROR_STOP=1 -q -f "%SEED%" >>"%LOG%" 2>&1
-if errorlevel 1 goto :error
-
->>"%LOG%" echo [%date% %time%] Base de datos lista.
+>>"%LOG%" echo [%date% %time%] Base de datos lista ^(vacia; la app descarga los datos reales de Supabase al arrancar^).
 exit /b 0
 
 :actualizar_existente
@@ -77,20 +79,9 @@ exit /b 0
 "%PSQL%" -h localhost -U rey_user -d rey_inventarios -v ON_ERROR_STOP=1 -q -f "%SCHEMA%" >>"%LOG%" 2>&1
 if errorlevel 1 goto :error
 
-REM Si la base quedo vacia, por ejemplo una instalacion anterior que fallo
-REM antes de sembrar los datos, se completa con los datos de ejemplo. Si ya
-REM tiene usuarios reales, se deja intacta.
-"%PSQL%" -h localhost -U rey_user -d rey_inventarios -tAc "SELECT count(*) FROM usuarios" >"%TMP_OUT%" 2>>"%LOG%"
-set "USUARIOS_COUNT="
-for /f "usebackq delims=" %%N in ("%TMP_OUT%") do set "USUARIOS_COUNT=%%N"
-del "%TMP_OUT%" >nul 2>&1
-
-if not "%USUARIOS_COUNT%"=="0" goto :actualizado_ok
-
->>"%LOG%" echo La tabla usuarios esta vacia, instalacion anterior incompleta. Sembrando datos iniciales.
-"%PSQL%" -h localhost -U rey_user -d rey_inventarios -v ON_ERROR_STOP=1 -q -f "%SEED%" >>"%LOG%" 2>&1
-if errorlevel 1 goto :error
-
+REM Si la tabla usuarios esta vacia (ej. una instalacion anterior que fallo
+REM antes de que la app alcanzara a descargar los datos de Supabase), no
+REM se siembra nada aqui: la app los descarga de la nube al arrancar.
 :actualizado_ok
 >>"%LOG%" echo [%date% %time%] Base de datos actualizada (datos existentes preservados).
 exit /b 0

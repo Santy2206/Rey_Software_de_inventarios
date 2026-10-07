@@ -105,6 +105,28 @@ class _BitacoraView(ft.Container):
             on_change=self._aplicar_filtros,
         )
 
+        # Calendarios emergentes: alternativa a escribir la fecha a mano con "/".
+        self._date_picker_inicio = ft.DatePicker(
+            first_date=datetime(2020, 1, 1),
+            last_date=datetime(2100, 1, 1),
+            on_change=self._on_fecha_inicio_elegida,
+        )
+        self._date_picker_fin = ft.DatePicker(
+            first_date=datetime(2020, 1, 1),
+            last_date=datetime(2100, 1, 1),
+            on_change=self._on_fecha_fin_elegida,
+        )
+        self._btn_calendario_inicio = ft.IconButton(
+            icon=ft.Icons.CALENDAR_MONTH,
+            tooltip="Elegir fecha",
+            on_click=lambda e: self.page.show_dialog(self._date_picker_inicio),
+        )
+        self._btn_calendario_fin = ft.IconButton(
+            icon=ft.Icons.CALENDAR_MONTH,
+            tooltip="Elegir fecha",
+            on_click=lambda e: self.page.show_dialog(self._date_picker_fin),
+        )
+
         # ── Tabla
         self._total = ft.Text(
             "0 registros",
@@ -241,7 +263,9 @@ class _BitacoraView(ft.Container):
                             self._buscar,
                             self._filtro,
                             self._fecha_inicio,
+                            self._btn_calendario_inicio,
                             self._fecha_fin,
+                            self._btn_calendario_fin,
                         ],
                     ),
                     ft.Divider(),
@@ -318,6 +342,20 @@ class _BitacoraView(ft.Container):
             fecha_inicio=self._fecha_inicio.value,
             fecha_fin=self._fecha_fin.value,
         )
+
+    def _on_fecha_inicio_elegida(self, e=None):
+        valor = self._date_picker_inicio.value
+        if valor:
+            self._fecha_inicio.value = valor.strftime("%d/%m/%Y")
+            self.page.update()
+            self._aplicar_filtros()
+
+    def _on_fecha_fin_elegida(self, e=None):
+        valor = self._date_picker_fin.value
+        if valor:
+            self._fecha_fin.value = valor.strftime("%d/%m/%Y")
+            self.page.update()
+            self._aplicar_filtros()
 
     def _parse_fecha(self, s: str):
         if not s:

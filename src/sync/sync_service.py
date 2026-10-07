@@ -266,6 +266,122 @@ class SyncService:
         return {"subidos": subidos, "fallidos": fallidos, "error": primer_error}
 
     @staticmethod
+    def _descargar_tabla(tabla: str) -> dict:
+        """
+        Trae todas las filas de una tabla desde Supabase y las inserta (o
+        actualiza si ya existen por id) en la base de datos local.
+
+        Usado para que un dispositivo nuevo arranque con los datos reales
+        ya existentes en la nube en vez de solo sus datos de ejemplo
+        locales (que de otra forma chocarían al sincronizar por nombre,
+        cédula, etc. con ids distintos).
+        """
+        # Supabase/PostgREST limita cada consulta a 1000 filas por defecto;
+        # se pagina con .range() para no truncar tablas grandes en silencio
+        # (ej: productos puede tener miles de filas).
+        _PAGINA = 1000
+        try:
+            filas = []
+            inicio = 0
+            while True:
+                resp = (
+                    supabase.table(tabla)
+                    .select("*")
+                    .range(inicio, inicio + _PAGINA - 1)
+                    .execute()
+                )
+                pagina = resp.data or []
+                filas.extend(pagina)
+                if len(pagina) < _PAGINA:
+                    break
+                inicio += _PAGINA
+        except Exception as e:
+            error_msg = str(e)
+            print(f"   No se pudo descargar {tabla}: {error_msg}")
+            return {"descargados": 0, "error": error_msg}
+
+        if not filas:
+            return {"descargados": 0, "error": None}
+
+        tiene_dirty = SyncService._tabla_tiene_dirty(tabla)
+        descargados = 0
+        primer_error = None
+        for fila in filas:
+            try:
+                fila = dict(fila)
+                if tiene_dirty:
+                    fila["dirty"] = False
+                    fila["synced_at"] = datetime.now(timezone.utc).isoformat()
+
+                columnas = list(fila.keys())
+                cols_sql = ", ".join(columnas)
+                placeholders = ", ".join(["%s"] * len(columnas))
+                updates_sql = ", ".join(
+                    f"{c} = EXCLUDED.{c}" for c in columnas if c != "id"
+                )
+                valores = tuple(fila[c] for c in columnas)
+
+                run_query(
+                    f"""
+                    INSERT INTO {tabla} ({cols_sql})
+                    VALUES ({placeholders})
+                    ON CONFLICT (id) DO UPDATE SET {updates_sql}
+                    """,
+                    valores,
+                )
+                descargados += 1
+            except Exception as e:
+                error_msg = str(e)
+                if primer_error is None:
+                    primer_error = error_msg
+                print(f"   Fallo al descargar fila de {tabla}: {error_msg}")
+
+        return {"descargados": descargados, "error": primer_error}
+
+    @staticmethod
+    def descargar_inicial(on_progress=None) -> dict:
+        """
+        Descarga desde Supabase los datos ya existentes para un dispositivo
+        nuevo (usuarios, bodegas, clientes, productos, etc.), antes de que
+        ese dispositivo intente subir nada.
+
+        Parámetros:
+            on_progress: callback opcional llamado con (tabla) tras procesar
+                         cada tabla.
+
+        Retorna:
+            dict: contrato estándar con resumen de descargados por tabla.
+        """
+        print("--- Descargando datos iniciales desde Supabase ---")
+        resumen = {}
+        total_descargados = 0
+        try:
+            for tabla in _TABLAS_BASE + _TABLAS_A_SYNC:
+                print(f" Descargando tabla: {tabla}")
+                r = SyncService._descargar_tabla(tabla)
+                resumen[tabla] = r
+                total_descargados += r["descargados"]
+                if on_progress:
+                    try:
+                        on_progress(tabla)
+                    except Exception:
+                        pass
+
+            return {
+                "success": True,
+                "message": f"{total_descargados} registros descargados",
+                "data": resumen,
+            }
+        except Exception as e:
+            error_msg = str(e)
+            print(f" Error crítico en SyncService.descargar_inicial: {error_msg}")
+            return {
+                "success": False,
+                "message": f"Descarga inicial interrumpida: {error_msg}",
+                "data": resumen,
+            }
+
+    @staticmethod
     def sync_pendientes(on_progress=None):
         """
         Sube a Supabase todas las filas dirty de las tablas configuradas.

@@ -321,15 +321,7 @@ class _RevisionVentasView(ft.Container):
 
     # ------------------------------------------------------------------
     def did_mount(self):
-        for d in (
-            self._dialog_vincular,
-            self._dialog_crear,
-            self._dialog_descartar,
-            self._dialog_descartar_todos,
-            self._dialog_fusion,
-            self._snackbar,
-        ):
-            self.page.overlay.append(d)
+        self.page.overlay.append(self._snackbar)
         self.page.update()
         self._status_header.load(self.page)
         threading.Thread(target=self._cargar_inicial, daemon=True).start()
@@ -902,13 +894,35 @@ class _RevisionVentasView(ft.Container):
             candidatos = []
         self._candidatos_actuales = candidatos
         self._pintar_candidatos(candidatos)
-        self._dialog_vincular.open = True
+        self._abrir_dialogo(self._dialog_vincular)
+
+    def _abrir_dialogo(self, dlg: ft.AlertDialog):
+        """Abre un AlertDialog con el API actual de Flet (show_dialog).
+
+        Flet 0.84: show_dialog gestiona su propio stack; no agregar también
+        a page.overlay o queda una copia duplicada que no se cierra y puede
+        dejar bloqueados los clics de diálogos abiertos después.
+        """
+        if hasattr(self.page, "show_dialog"):
+            self.page.show_dialog(dlg)
+        else:
+            if dlg not in self.page.overlay:
+                self.page.overlay.append(dlg)
+            dlg.open = True
+            self.page.update()
+
+    def _cerrar_dialogo_generico(self, dlg: ft.AlertDialog):
+        dlg.open = False
+        try:
+            if hasattr(self.page, "pop_dialog"):
+                self.page.pop_dialog()
+        except Exception:
+            pass
         self.page.update()
 
     def _cerrar_dialogo_vincular(self, e=None):
-        self._dialog_vincular.open = False
+        self._cerrar_dialogo_generico(self._dialog_vincular)
         self._fila_actual = None
-        self.page.update()
 
     def _pintar_candidatos(self, candidatos: list[dict]):
         self._lista_candidatos.controls.clear()
@@ -986,13 +1000,11 @@ class _RevisionVentasView(ft.Container):
                     valor_sug = str(b["id"])
                     break
         self._campo_bodega_nuevo.value = valor_sug
-        self._dialog_crear.open = True
-        self.page.update()
+        self._abrir_dialogo(self._dialog_crear)
 
     def _cerrar_dialogo_crear(self, e=None):
-        self._dialog_crear.open = False
+        self._cerrar_dialogo_generico(self._dialog_crear)
         self._fila_actual = None
-        self.page.update()
 
     def _confirmar_crear(self, e=None):
         fila = self._fila_actual
@@ -1023,13 +1035,11 @@ class _RevisionVentasView(ft.Container):
     def _abrir_dialogo_descartar(self, fila: dict):
         self._fila_actual = fila
         self._campo_motivo.value = ""
-        self._dialog_descartar.open = True
-        self.page.update()
+        self._abrir_dialogo(self._dialog_descartar)
 
     def _cerrar_dialogo_descartar(self, e=None):
-        self._dialog_descartar.open = False
+        self._cerrar_dialogo_generico(self._dialog_descartar)
         self._fila_actual = None
-        self.page.update()
 
     def _confirmar_descartar(self, e=None):
         fila = self._fila_actual
@@ -1052,12 +1062,10 @@ class _RevisionVentasView(ft.Container):
     # --- Descartar todos ---
     def _abrir_dialogo_descartar_todos(self, e=None):
         self._campo_motivo_todos.value = ""
-        self._dialog_descartar_todos.open = True
-        self.page.update()
+        self._abrir_dialogo(self._dialog_descartar_todos)
 
     def _cerrar_dialogo_descartar_todos(self, e=None):
-        self._dialog_descartar_todos.open = False
-        self.page.update()
+        self._cerrar_dialogo_generico(self._dialog_descartar_todos)
 
     def _confirmar_descartar_todos(self, e=None):
         motivo = (self._campo_motivo_todos.value or "").strip()
@@ -1080,12 +1088,10 @@ class _RevisionVentasView(ft.Container):
         self._fusion_destino.value = ""
         self._fusion_password.value = ""
         self._fusion_palabra.value = ""
-        self._dialog_fusion.open = True
-        self.page.update()
+        self._abrir_dialogo(self._dialog_fusion)
 
     def _cerrar_dialogo_fusion(self, e=None):
-        self._dialog_fusion.open = False
-        self.page.update()
+        self._cerrar_dialogo_generico(self._dialog_fusion)
 
     def _confirmar_fusion(self, e=None):
         origen = (self._fusion_origen.value or "").strip()

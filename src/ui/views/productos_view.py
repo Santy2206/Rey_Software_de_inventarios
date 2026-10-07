@@ -250,9 +250,6 @@ class _ProductosView(ft.Container):
 
     # ── Lifecycle hook ──────────────────────────────────────────────────────
     def did_mount(self):
-        self.page.overlay.append(self._dialog)
-        self.page.overlay.append(self._dialog_importar)
-        self.page.overlay.append(self._dialog_eliminar_todos)
         self.page.overlay.append(self._snackbar)
         self.page.update()
         self._status_header.load(self.page)
@@ -662,6 +659,30 @@ class _ProductosView(ft.Container):
         except Exception:
             pass
 
+    def _abrir_dialogo(self, dlg: ft.AlertDialog):
+        """Abre un AlertDialog con el API actual de Flet (show_dialog).
+
+        Flet 0.84: show_dialog gestiona su propio stack; no agregar también
+        a page.overlay o queda una copia duplicada que no se cierra y puede
+        dejar bloqueados los clics de diálogos abiertos después.
+        """
+        if hasattr(self.page, "show_dialog"):
+            self.page.show_dialog(dlg)
+        else:
+            if dlg not in self.page.overlay:
+                self.page.overlay.append(dlg)
+            dlg.open = True
+            self.page.update()
+
+    def _cerrar_dialogo_generico(self, dlg: ft.AlertDialog):
+        dlg.open = False
+        try:
+            if hasattr(self.page, "pop_dialog"):
+                self.page.pop_dialog()
+        except Exception:
+            pass
+        self.page.update()
+
     def _abrir_dialogo_crear(self, e=None):
         self._producto_editando = None
         self._campo_nombre.value = ""
@@ -674,8 +695,7 @@ class _ProductosView(ft.Container):
         self._campo_precio.value = ""
         self._campo_precio.visible = False
         self._dialog.title = ft.Text("Nuevo Producto")
-        self._dialog.open = True
-        self.page.update()
+        self._abrir_dialogo(self._dialog)
 
     def _abrir_dialogo_editar(self, producto: dict):
         self._producto_editando = producto
@@ -692,12 +712,10 @@ class _ProductosView(ft.Container):
         self._campo_precio.value = str(producto.get("precio") or "0")
         self._campo_precio.visible = True
         self._dialog.title = ft.Text(f"Editar: {producto.get('nombre')}")
-        self._dialog.open = True
-        self.page.update()
+        self._abrir_dialogo(self._dialog)
 
     def _cerrar_dialogo(self, e=None):
-        self._dialog.open = False
-        self.page.update()
+        self._cerrar_dialogo_generico(self._dialog)
 
     # ─────────────────────────────────────────────────────────────────────────
     # CRUD — delegan al servicio, luego recargan en background
@@ -768,12 +786,10 @@ class _ProductosView(ft.Container):
     def _abrir_dialogo_eliminar_todos(self, e=None):
         self._eliminar_password.value = ""
         self._eliminar_verificacion.value = ""
-        self._dialog_eliminar_todos.open = True
-        self.page.update()
+        self._abrir_dialogo(self._dialog_eliminar_todos)
 
     def _cerrar_dialogo_eliminar_todos(self, e=None):
-        self._dialog_eliminar_todos.open = False
-        self.page.update()
+        self._cerrar_dialogo_generico(self._dialog_eliminar_todos)
 
     def _confirmar_eliminar_todos(self, e=None):
         password = (self._eliminar_password.value or "").strip()
@@ -877,12 +893,10 @@ class _ProductosView(ft.Container):
     def _abrir_dialogo_importar(self, e=None):
         self._import_bodega.value = None
         self._import_ruta.value = ""
-        self._dialog_importar.open = True
-        self.page.update()
+        self._abrir_dialogo(self._dialog_importar)
 
     def _cerrar_dialogo_importar(self, e=None):
-        self._dialog_importar.open = False
-        self.page.update()
+        self._cerrar_dialogo_generico(self._dialog_importar)
 
     def _abrir_selector_archivo(self, e=None):
         """Abre el explorador de archivos nativo."""

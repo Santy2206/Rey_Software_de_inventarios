@@ -117,7 +117,6 @@ class _UsuariosView(ft.Container):
 
     # ── Lifecycle ───────────────────────────────────────────────────────
     def did_mount(self):
-        self.page.overlay.append(self._dialog_rol)
         self.page.overlay.append(self._snackbar)
         self.page.update()
         self._status_header.load(self.page)
@@ -242,19 +241,41 @@ class _UsuariosView(ft.Container):
     # CAMBIO DE ROL
     # ======================================================
 
+    def _abrir_dialogo(self, dlg: ft.AlertDialog):
+        """Abre un AlertDialog con el API actual de Flet (show_dialog).
+
+        Flet 0.84: show_dialog gestiona su propio stack; no agregar también
+        a page.overlay o queda una copia duplicada que no se cierra y puede
+        dejar bloqueados los clics de diálogos abiertos después.
+        """
+        if hasattr(self.page, "show_dialog"):
+            self.page.show_dialog(dlg)
+        else:
+            if dlg not in self.page.overlay:
+                self.page.overlay.append(dlg)
+            dlg.open = True
+            self.page.update()
+
+    def _cerrar_dialogo_generico(self, dlg: ft.AlertDialog):
+        dlg.open = False
+        try:
+            if hasattr(self.page, "pop_dialog"):
+                self.page.pop_dialog()
+        except Exception:
+            pass
+        self.page.update()
+
     def _abrir_dialogo_rol(self, usuario: dict):
         self._usuario_editando = usuario
         self._campo_rol.value = (usuario.get("rol") or "").lower() or None
         self._dialog_rol.title = ft.Text(
             f"Cambiar rol de {usuario.get('name', '')}"
         )
-        self._dialog_rol.open = True
-        self.page.update()
+        self._abrir_dialogo(self._dialog_rol)
 
     def _cerrar_dialogo_rol(self, e=None):
         self._usuario_editando = None
-        self._dialog_rol.open = False
-        self.page.update()
+        self._cerrar_dialogo_generico(self._dialog_rol)
 
     def _guardar_rol(self, e=None):
         usuario = self._usuario_editando
